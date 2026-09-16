@@ -12,6 +12,7 @@ from .manifest import (
     RoamConfig,
 )
 from .validation import validate_manifest
+from .writer import manifest_to_toml
 
 __all__ = [
     "AnimationConfig",
@@ -25,5 +26,6 @@ __all__ = [
     "PlaybackModeName",
     "RoamConfig",
     "load_manifest",
+    "manifest_to_toml",
     "validate_manifest",
 ]
