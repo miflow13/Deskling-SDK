@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from desktoppet.config import load_manifest
 from desktoppet.core import Pet
+from desktoppet.interaction import ClickTracker
 
 from .backend import GtkBackend
 
@@ -19,6 +21,8 @@ from .backend import GtkBackend
 class GtkPetApplication(Gtk.Application):
     TICK_MS = 16
     DRAG_CLICK_SUPPRESSION_S = 0.15
+    DOUBLE_CLICK_WINDOW_MS = 450.0
+    DOUBLE_CLICK_DISTANCE_PX = 18.0
 
     def __init__(self, project_path: str | Path) -> None:
         super().__init__(
@@ -28,6 +32,7 @@ class GtkPetApplication(Gtk.Application):
         self.project_path = Path(project_path)
         self._pet: Pet | None = None
         self._backend: GtkBackend | None = None
+        self._logger = logging.getLogger(__name__)
         self._last_tick = 0.0
         self._tick_source: int | None = None
         self._drag_active = False
@@ -36,6 +41,10 @@ class GtkPetApplication(Gtk.Application):
         self._drag_start_x = 0.0
         self._drag_start_y = 0.0
         self._suppress_click_until = 0.0
+        self._click_tracker = ClickTracker(
+            double_click_ms=self.DOUBLE_CLICK_WINDOW_MS,
+            max_distance_px=self.DOUBLE_CLICK_DISTANCE_PX,
+        )
 
     def do_activate(self) -> None:
         existing = self.get_active_window()
@@ -89,10 +98,9 @@ class GtkPetApplication(Gtk.Application):
         click = Gtk.GestureClick()
         click.set_button(1)
         # Learning note:
-        # GTK knows the click count as soon as a press arrives. Trigger the
-        # double-click reaction on the second press so another gesture cannot
-        # interrupt the matching release before Deskling sees it.
-        click.connect("pressed", self._on_click_pressed)
+        # Do not trust GTK's n_press for double-click behavior. Some gesture
+        # combinations reset or claim GTK's multi-click sequence. Deskling uses
+        # completed click releases plus its own ClickTracker instead.
         click.connect("released", self._on_click_released)
         widget.add_controller(click)
 
@@ -115,19 +123,6 @@ class GtkPetApplication(Gtk.Application):
         pet.tick(delta_ms)
         return True
 
-    def _on_click_pressed(
-        self, _gesture: Gtk.GestureClick, n_press: int, x: float, y: float
-    ) -> None:
-        pet = self._pet
-        if pet is None:
-            return
-
-        # A double-click is known on the second press. React immediately rather
-        # than waiting for the release, which may be interrupted by another
-        # gesture controller participating in the same pointer sequence.
-        if n_press >= 2 and not self._drag_active:
-            pet.handle_click(n_press, x=x, y=y)
-
     def _on_click_released(
         self, _gesture: Gtk.GestureClick, n_press: int, x: float, y: float
     ) -> None:
@@ -135,18 +130,25 @@ class GtkPetApplication(Gtk.Application):
         if pet is None:
             return
 
-        # Double-click was already handled on its second press. Handling it here
-        # too would restart the reaction and duplicate its events.
-        if n_press >= 2:
-            return
-
         # GTK may report a release-click around the same pointer sequence used
         # for a drag. Do not let dropping the pet accidentally trigger a click
         # reaction. The short deadline also covers callback ordering after drag-end.
         if self._drag_active or time.monotonic() < self._suppress_click_until:
+            self._click_tracker.reset()
             return
 
-        pet.handle_click(1, x=x, y=y)
+        # We intentionally ignore GTK's n_press here. Our own tracker makes
+        # double-click recognition deterministic across GTK/XWayland setups.
+        timestamp_ms = time.monotonic() * 1000.0
+        clicks = self._click_tracker.register(timestamp_ms, x, y)
+        self._logger.debug(
+            "Pointer release: gtk_n_press=%s deskling_clicks=%s x=%.1f y=%.1f",
+            n_press,
+            clicks,
+            x,
+            y,
+        )
+        pet.handle_click(clicks, x=x, y=y)
 
     def _on_drag_begin(self, _gesture: Gtk.GestureDrag, x: float, y: float) -> None:
         pet = self._pet
@@ -156,6 +158,9 @@ class GtkPetApplication(Gtk.Application):
         if pet.state != "dragging" and not pet.states.can_transition("dragging"):
             return
 
+        # Once pointer movement becomes a drag, it must not combine with a prior
+        # click to form a false double-click later.
+        self._click_tracker.reset()
         self._drag_active = True
         self._drag_origin_x = pet.position.x
         self._drag_origin_y = pet.position.y
@@ -196,6 +201,7 @@ class GtkPetApplication(Gtk.Application):
             )
         pet.drag_end()
         self._drag_active = False
+        self._click_tracker.reset()
         self._suppress_click_until = time.monotonic() + self.DRAG_CLICK_SUPPRESSION_S
 
     def _sample_global_drag(self) -> bool:
