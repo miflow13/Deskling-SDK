@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/desktoppet/__init__.py
+src/desktoppet.egg-info/PKG-INFO
+src/desktoppet.egg-info/SOURCES.txt
+src/desktoppet.egg-info/dependency_links.txt
+src/desktoppet.egg-info/top_level.txt
+src/desktoppet/animation/__init__.py
+src/desktoppet/animation/animation.py
+src/desktoppet/animation/frame.py
+src/desktoppet/animation/player.py

@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "desktop-pet-sdk"
+version = "0.1.0"
+description = "A framework for building interactive desktop pets."
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+where = ["src"]
