@@ -1,0 +1,47 @@
+schema_version = 1
+
+[pet]
+name = "Boo"
+width = 48
+height = 48
+scale = 2
+default_state = "idle"
+default_animation = "idle"
+
+[animations.idle]
+mode = "pingpong"
+frames = [
+  { file = "sprites/idle_01.svg", duration_ms = 420 },
+  { file = "sprites/idle_02.svg", duration_ms = 420 },
+]
+
+[animations.blink]
+mode = "once"
+frames = [
+  { file = "sprites/blink.svg", duration_ms = 130 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
+[animations.spook]
+mode = "once"
+frames = [
+  { file = "sprites/spook.svg", duration_ms = 260 },
+  { file = "sprites/idle_02.svg", duration_ms = 160 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
+[interaction]
+click_animation = "blink"
+double_click_animation = "spook"
+
+[transitions]
+idle = ["reaction", "dragging"]
+reaction = ["idle", "dragging"]
+dragging = ["idle"]
+
+[behavior.idle]
+min_delay_ms = 3500
+max_delay_ms = 7000
+actions = [
+  { name = "blink", weight = 1.0 },
+]
