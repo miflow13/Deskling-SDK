@@ -12,6 +12,15 @@ class ManifestError(ValueError):
 
 
 def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest:
+    """Translate a human-written pet.toml into validated Python objects.
+
+    Learning note:
+        pet.toml is only a description of a pet. The loader is the front door of
+        the SDK: it reads that text, turns it into dictionaries, validates it,
+        and finally returns a PetManifest that the engine can work with.
+
+        pet.toml -> tomllib -> dicts -> dataclasses -> PetManifest
+    """
     manifest_path = Path(path)
     if manifest_path.is_dir():
         manifest_path = manifest_path / "pet.toml"
@@ -19,13 +28,23 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         raise ManifestError(f"Manifest not found: {manifest_path}")
 
     try:
+        # Step 1: read_text() loads pet.toml from disk as one Python string.
+        # Step 2: tomllib.loads() parses that TOML string into nested dictionaries.
+        # Example: [pet] name = "Slime" becomes roughly
+        # {"pet": {"name": "Slime"}}.
         data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ManifestError(f"Could not read manifest: {exc}") from exc
 
     root = manifest_path.parent
+
+    # data.get("pet", {}) pulls just the [pet] table out of the parsed TOML.
+    # The empty dict is a safe fallback; required fields are validated below.
     pet_data = data.get("pet", {})
     try:
+        # Convert loose dictionary values into a strongly structured PetSettings
+        # object. From here onward, engine code can use pet.name / pet.width etc.
+        # instead of repeatedly indexing raw dictionaries.
         pet = PetSettings(
             name=str(pet_data["name"]),
             width=int(pet_data["width"]),
@@ -40,6 +59,9 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
     if pet.width <= 0 or pet.height <= 0 or pet.scale <= 0:
         raise ManifestError("Pet width, height, and scale must be greater than zero")
 
+    # Each [animations.*] TOML table becomes an Animation object containing
+    # Frame objects. Notice that the loader creates animation DATA; it does not
+    # decide when or why an animation should play.
     animations: dict[str, Animation] = {}
     for name, animation_data in data.get("animations", {}).items():
         try:
@@ -119,6 +141,8 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
                 raise
             raise ManifestError(f"Invalid [behavior.roam] section: {exc}") from exc
 
+    # PetManifest is the finished, validated blueprint handed to the Pet engine.
+    # After this point the core does not need to know anything about TOML parsing.
     return PetManifest(
         root=root,
         pet=pet,
