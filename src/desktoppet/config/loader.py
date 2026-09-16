@@ -2,6 +2,8 @@ from pathlib import Path
 import tomllib
 from typing import cast
 
+from desktoppet.package import PackageError, resolve_project_path
+
 from .errors import ManifestError
 from .manifest import (
     AnimationConfig,
@@ -18,15 +20,19 @@ from .validation import validate_manifest
 
 
 def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest:
-    """Parse pet.toml into declarative config, then validate that config.
+    """Parse a pet project or .deskling package into validated declarative config.
 
     The loader intentionally stops at configuration data. Runtime objects are
-    created later by desktoppet.runtime, which keeps TOML parsing independent
-    from animation playback, behavior scheduling, and platform code.
+    created later by desktoppet.runtime, which keeps TOML/package parsing
+    independent from animation playback, behavior scheduling, and platform code.
 
-        pet.toml -> loader -> PetManifest -> validation -> runtime builder -> Pet
+        folder/.deskling -> loader -> PetManifest -> validation -> runtime builder -> Pet
     """
-    manifest_path = Path(path)
+    try:
+        manifest_path = resolve_project_path(path)
+    except PackageError as exc:
+        raise ManifestError(str(exc)) from exc
+
     if manifest_path.is_dir():
         manifest_path = manifest_path / "pet.toml"
     if not manifest_path.exists():
