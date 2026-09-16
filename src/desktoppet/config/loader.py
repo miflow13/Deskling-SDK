@@ -1,31 +1,30 @@
 from pathlib import Path
 import tomllib
+from typing import cast
 
-from desktoppet.animation import Animation, Frame, PlaybackMode
-from desktoppet.behavior import BehaviorAction
-
+from .errors import ManifestError
 from .manifest import (
+    AnimationConfig,
+    BehaviorActionConfig,
     BehaviorConfig,
+    FrameConfig,
     InteractionConfig,
     PetManifest,
     PetSettings,
+    PlaybackModeName,
     RoamConfig,
 )
-
-
-class ManifestError(ValueError):
-    pass
+from .validation import validate_manifest
 
 
 def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest:
-    """Translate a human-written pet.toml into validated Python objects.
+    """Parse pet.toml into declarative config, then validate that config.
 
-    Learning note:
-        pet.toml is only a description of a pet. The loader is the front door of
-        the SDK: it reads that text, turns it into dictionaries, validates it,
-        and finally returns a PetManifest that the engine can work with.
+    The loader intentionally stops at configuration data. Runtime objects are
+    created later by desktoppet.runtime, which keeps TOML parsing independent
+    from animation playback, behavior scheduling, and platform code.
 
-        pet.toml -> tomllib -> dicts -> dataclasses -> PetManifest
+        pet.toml -> loader -> PetManifest -> validation -> runtime builder -> Pet
     """
     manifest_path = Path(path)
     if manifest_path.is_dir():
@@ -34,23 +33,19 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         raise ManifestError(f"Manifest not found: {manifest_path}")
 
     try:
-        # Step 1: read_text() loads pet.toml from disk as one Python string.
-        # Step 2: tomllib.loads() parses that TOML string into nested dictionaries.
-        # Example: [pet] name = "Slime" becomes roughly
-        # {"pet": {"name": "Slime"}}.
         data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ManifestError(f"Could not read manifest: {exc}") from exc
 
-    root = manifest_path.parent
+    root = manifest_path.parent.resolve()
 
-    # data.get("pet", {}) pulls just the [pet] table out of the parsed TOML.
-    # The empty dict is a safe fallback; required fields are validated below.
+    try:
+        schema_version = int(data["schema_version"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ManifestError(f"Invalid schema_version: {exc}") from exc
+
     pet_data = data.get("pet", {})
     try:
-        # Convert loose dictionary values into a strongly structured PetSettings
-        # object. From here onward, engine code can use pet.name / pet.width etc.
-        # instead of repeatedly indexing raw dictionaries.
         pet = PetSettings(
             name=str(pet_data["name"]),
             width=int(pet_data["width"]),
@@ -62,41 +57,38 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
     except (KeyError, TypeError, ValueError) as exc:
         raise ManifestError(f"Invalid [pet] section: {exc}") from exc
 
-    if pet.width <= 0 or pet.height <= 0 or pet.scale <= 0:
-        raise ManifestError("Pet width, height, and scale must be greater than zero")
+    animations: dict[str, AnimationConfig] = {}
+    try:
+        animation_tables = data.get("animations", {})
+        for raw_name, animation_data in animation_tables.items():
+            name = str(raw_name)
+            mode = cast(
+                PlaybackModeName,
+                str(animation_data.get("mode", "loop")),
+            )
+            frames = tuple(
+                FrameConfig(
+                    file=Path(str(frame_data["file"])),
+                    duration_ms=int(frame_data["duration_ms"]),
+                )
+                for frame_data in animation_data["frames"]
+            )
+            animations[name] = AnimationConfig(
+                name=name,
+                frames=frames,
+                mode=mode,
+            )
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise ManifestError(f"Invalid [animations] section: {exc}") from exc
 
-    # Each [animations.*] TOML table becomes an Animation object containing
-    # Frame objects. Notice that the loader creates animation DATA; it does not
-    # decide when or why an animation should play.
-    animations: dict[str, Animation] = {}
-    for name, animation_data in data.get("animations", {}).items():
-        try:
-            mode = PlaybackMode(str(animation_data.get("mode", "loop")))
-            frames = []
-            for frame_data in animation_data["frames"]:
-                frame_path = root / str(frame_data["file"])
-                if check_assets and not frame_path.exists():
-                    raise ManifestError(f"Missing asset for {name!r}: {frame_path}")
-                frames.append(Frame(frame_path, int(frame_data["duration_ms"])))
-            animations[name] = Animation(name=name, frames=frames, mode=mode)
-        except ManifestError:
-            raise
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ManifestError(f"Invalid animation {name!r}: {exc}") from exc
+    try:
+        transitions = {
+            str(state): {str(target) for target in targets}
+            for state, targets in data.get("transitions", {}).items()
+        }
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ManifestError(f"Invalid [transitions] section: {exc}") from exc
 
-    if pet.default_animation not in animations:
-        raise ManifestError(
-            f"Default animation {pet.default_animation!r} is not defined in [animations]"
-        )
-
-    transitions = {
-        str(state): {str(target) for target in targets}
-        for state, targets in data.get("transitions", {}).items()
-    }
-
-    # Simple pointer reactions are declared as animation names. The platform
-    # layer only reports clicks; the core decides which configured reaction to
-    # play. This keeps GTK-specific input separate from pet personality.
     interaction = None
     interaction_data = data.get("interaction")
     if interaction_data:
@@ -109,20 +101,6 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
                     str(double_click_value) if double_click_value is not None else None
                 ),
             )
-            for label, animation_name in (
-                ("click_animation", interaction.click_animation),
-                ("double_click_animation", interaction.double_click_animation),
-            ):
-                if animation_name is None:
-                    continue
-                if not animation_name.strip():
-                    raise ManifestError(f"[interaction].{label} cannot be empty")
-                if animation_name not in animations:
-                    raise ManifestError(
-                        f"Interaction animation {animation_name!r} is not defined in [animations]"
-                    )
-        except ManifestError:
-            raise
         except (AttributeError, TypeError, ValueError) as exc:
             raise ManifestError(f"Invalid [interaction] section: {exc}") from exc
 
@@ -135,16 +113,15 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
             idle_behavior = BehaviorConfig(
                 min_delay_ms=int(idle_data.get("min_delay_ms", 5000)),
                 max_delay_ms=int(idle_data.get("max_delay_ms", 15000)),
-                actions=[
-                    BehaviorAction(str(action["name"]), float(action.get("weight", 1.0)))
+                actions=tuple(
+                    BehaviorActionConfig(
+                        name=str(action["name"]),
+                        weight=float(action.get("weight", 1.0)),
+                    )
                     for action in idle_data.get("actions", [])
-                ],
+                ),
             )
-            if not idle_behavior.actions:
-                raise ManifestError("[behavior.idle] must define at least one action")
-        except (KeyError, TypeError, ValueError) as exc:
-            if isinstance(exc, ManifestError):
-                raise
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise ManifestError(f"Invalid [behavior.idle] section: {exc}") from exc
 
     roam_behavior = None
@@ -160,28 +137,11 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
                 left_animation=str(roam_data.get("left_animation", "walk_left")),
                 right_animation=str(roam_data.get("right_animation", "walk_right")),
             )
-            if roam_behavior.min_delay_ms < 0 or roam_behavior.max_delay_ms < roam_behavior.min_delay_ms:
-                raise ManifestError("[behavior.roam] has an invalid delay range")
-            if roam_behavior.min_walk_ms <= 0 or roam_behavior.max_walk_ms < roam_behavior.min_walk_ms:
-                raise ManifestError("[behavior.roam] has an invalid walk duration range")
-            if roam_behavior.speed_px_s <= 0:
-                raise ManifestError("[behavior.roam].speed_px_s must be greater than zero")
-            for animation_name in (
-                roam_behavior.left_animation,
-                roam_behavior.right_animation,
-            ):
-                if animation_name not in animations:
-                    raise ManifestError(
-                        f"Roam animation {animation_name!r} is not defined in [animations]"
-                    )
-        except (KeyError, TypeError, ValueError) as exc:
-            if isinstance(exc, ManifestError):
-                raise
+        except (AttributeError, TypeError, ValueError) as exc:
             raise ManifestError(f"Invalid [behavior.roam] section: {exc}") from exc
 
-    # PetManifest is the finished, validated blueprint handed to the Pet engine.
-    # After this point the core does not need to know anything about TOML parsing.
-    return PetManifest(
+    manifest = PetManifest(
+        schema_version=schema_version,
         root=root,
         pet=pet,
         animations=animations,
@@ -190,3 +150,5 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         roam_behavior=roam_behavior,
         interaction=interaction,
     )
+    validate_manifest(manifest, check_assets=check_assets)
+    return manifest

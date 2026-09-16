@@ -17,6 +17,7 @@ def _validate(path: str) -> int:
         print(f"Invalid pet: {exc}")
         return 1
     print(f"Valid pet: {manifest.pet.name}")
+    print(f"Schema: {manifest.schema_version}")
     print(f"Animations: {', '.join(sorted(manifest.animations))}")
     return 0
 
@@ -29,11 +30,12 @@ def _inspect(path: str) -> int:
         return 1
 
     print(f"Name: {manifest.pet.name}")
+    print(f"Schema: {manifest.schema_version}")
     print(f"Canvas: {manifest.pet.width}x{manifest.pet.height} @ {manifest.pet.scale}x")
     print(f"Default: state={manifest.pet.default_state}, animation={manifest.pet.default_animation}")
     print("Animations:")
     for animation in manifest.animations.values():
-        print(f"  - {animation.name}: {len(animation.frames)} frame(s), {animation.mode.value}")
+        print(f"  - {animation.name}: {len(animation.frames)} frame(s), {animation.mode}")
     print("Transitions:")
     for state, targets in sorted(manifest.transitions.items()):
         print(f"  - {state} -> {', '.join(sorted(targets)) or '(none)'}")

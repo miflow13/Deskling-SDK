@@ -7,6 +7,7 @@ from desktoppet.config.manifest import PetManifest
 from desktoppet.interaction import DragController
 from desktoppet.movement import Direction, MovementController, Position, Size
 from desktoppet.platforms.base import PlatformBackend
+from desktoppet.runtime import build_animations, build_behavior_actions
 
 from .events import EventBus
 from .state import StateController
@@ -21,11 +22,12 @@ class Pet:
         machine, movement system, drag system, etc. Instead, it HAS those
         components and coordinates them.
 
-        PetManifest -> Pet -> engine components -> PlatformBackend
+        PetManifest -> runtime builders -> Pet -> engine components -> PlatformBackend
 
-    The manifest provides the pet's configuration/data. The backend provides
-    platform-specific capabilities such as drawing a frame and moving a window.
-    The core Pet class connects those two worlds without importing GTK.
+    The manifest provides declarative configuration. Runtime builders turn the
+    config-only animation/behavior specs into live engine objects. The backend
+    provides platform-specific capabilities such as drawing a frame and moving
+    a window. The core Pet class connects those worlds without importing GTK.
     """
 
     def __init__(self, manifest: PetManifest, backend: PlatformBackend) -> None:
@@ -34,6 +36,10 @@ class Pet:
         # 2. backend = how this operating system displays/moves the pet
         self.manifest = manifest
         self.backend = backend
+
+        # Runtime objects are constructed at this boundary, not while parsing
+        # TOML. That keeps config reusable by tools such as a future web builder.
+        self.animations = build_animations(manifest)
 
         # Pet owns small focused components rather than putting every job into
         # one giant class. This is composition: Pet HAS an EventBus,
@@ -53,7 +59,7 @@ class Pet:
         if manifest.idle_behavior is not None:
             config = manifest.idle_behavior
             self.scheduler = BehaviorScheduler(
-                config.actions,
+                build_behavior_actions(config),
                 min_delay_ms=config.min_delay_ms,
                 max_delay_ms=config.max_delay_ms,
             )
@@ -96,7 +102,7 @@ class Pet:
             self.events.emit("state.changed", previous=previous, current=target)
 
     def play(self, animation_name: str, *, state: str | None = None) -> None:
-        animation = self.manifest.animations.get(animation_name)
+        animation = self.animations.get(animation_name)
         if animation is None:
             raise KeyError(f"Unknown animation: {animation_name}")
         if state is not None and state != self.state:
@@ -183,7 +189,7 @@ class Pet:
                 delta_ms,
                 active=self.state == self.manifest.pet.default_state,
             )
-            if action is not None and action in self.manifest.animations:
+            if action is not None and action in self.animations:
                 if self.states.can_transition("reaction"):
                     self.react(action)
                 else:

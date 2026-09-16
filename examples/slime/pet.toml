@@ -1,11 +1,12 @@
+schema_version = 1
 
 # This file DESCRIBES the pet; it does not run the pet itself.
 # Deskling's loader reads this TOML and converts it into Python dataclasses:
 #
-#   pet.toml -> load_manifest() -> PetManifest -> Pet
+#   pet.toml -> load_manifest() -> PetManifest -> runtime builder -> Pet
 #
 # That separation lets pet creators change personality/config without editing
-# the SDK engine.
+# the SDK engine, and it gives a future web builder a stable data contract.
 
 [pet]
 # Basic identity and canvas/default runtime settings.
