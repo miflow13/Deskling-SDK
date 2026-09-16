@@ -1,4 +1,4 @@
-# Learning note:
+
 # This file DESCRIBES the pet; it does not run the pet itself.
 # Deskling's loader reads this TOML and converts it into Python dataclasses:
 #
