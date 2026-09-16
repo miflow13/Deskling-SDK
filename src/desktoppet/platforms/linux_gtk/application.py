@@ -103,6 +103,8 @@ class GtkPetApplication(Gtk.Application):
         now = time.monotonic()
         delta_ms = max(0, round((now - self._last_tick) * 1000))
         self._last_tick = now
+        if self._drag_active:
+            self._sample_global_drag()
         pet.tick(delta_ms)
         return True
 
@@ -117,7 +119,8 @@ class GtkPetApplication(Gtk.Application):
 
     def _on_drag_begin(self, _gesture: Gtk.GestureDrag, x: float, y: float) -> None:
         pet = self._pet
-        if pet is None:
+        backend = self._backend
+        if pet is None or backend is None:
             return
         if pet.state != "dragging" and not pet.states.can_transition("dragging"):
             return
@@ -127,14 +130,23 @@ class GtkPetApplication(Gtk.Application):
         self._drag_origin_y = pet.position.y
         self._drag_start_x = x
         self._drag_start_y = y
-        pet.drag_start(self._drag_origin_x + x, self._drag_origin_y + y)
+
+        pointer = backend.pointer_position()
+        if pointer is not None:
+            pet.drag_start(pointer.x, pointer.y)
+        else:
+            pet.drag_start(self._drag_origin_x + x, self._drag_origin_y + y)
 
     def _on_drag_update(
         self, _gesture: Gtk.GestureDrag, offset_x: float, offset_y: float
     ) -> None:
-        if self._pet is None or not self._drag_active:
+        pet = self._pet
+        if pet is None or not self._drag_active:
             return
-        self._pet.drag_move(
+        if self._sample_global_drag():
+            return
+
+        pet.drag_move(
             self._drag_origin_x + self._drag_start_x + offset_x,
             self._drag_origin_y + self._drag_start_y + offset_y,
         )
@@ -142,8 +154,26 @@ class GtkPetApplication(Gtk.Application):
     def _on_drag_end(
         self, _gesture: Gtk.GestureDrag, offset_x: float, offset_y: float
     ) -> None:
-        if self._pet is None or not self._drag_active:
+        pet = self._pet
+        if pet is None or not self._drag_active:
             return
-        self._on_drag_update(_gesture, offset_x, offset_y)
-        self._pet.drag_end()
+
+        if not self._sample_global_drag():
+            pet.drag_move(
+                self._drag_origin_x + self._drag_start_x + offset_x,
+                self._drag_origin_y + self._drag_start_y + offset_y,
+            )
+        pet.drag_end()
         self._drag_active = False
+
+    def _sample_global_drag(self) -> bool:
+        pet = self._pet
+        backend = self._backend
+        if pet is None or backend is None or not self._drag_active:
+            return False
+
+        pointer = backend.pointer_position()
+        if pointer is None:
+            return False
+        pet.drag_move(pointer.x, pointer.y)
+        return True
