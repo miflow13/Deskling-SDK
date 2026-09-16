@@ -22,6 +22,17 @@ class BehaviorConfig:
     actions: list[BehaviorAction]
 
 
+@dataclass(frozen=True, slots=True)
+class RoamConfig:
+    min_delay_ms: int
+    max_delay_ms: int
+    min_walk_ms: int
+    max_walk_ms: int
+    speed_px_s: float
+    left_animation: str
+    right_animation: str
+
+
 @dataclass(slots=True)
 class PetManifest:
     root: Path
@@ -29,3 +40,4 @@ class PetManifest:
     animations: dict[str, Animation]
     transitions: dict[str, set[str]]
     idle_behavior: BehaviorConfig | None = None
+    roam_behavior: RoamConfig | None = None

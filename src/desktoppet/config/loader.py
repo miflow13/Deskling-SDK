@@ -4,7 +4,7 @@ import tomllib
 from desktoppet.animation import Animation, Frame, PlaybackMode
 from desktoppet.behavior import BehaviorAction
 
-from .manifest import BehaviorConfig, PetManifest, PetSettings
+from .manifest import BehaviorConfig, PetManifest, PetSettings, RoamConfig
 
 
 class ManifestError(ValueError):
@@ -66,8 +66,10 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         for state, targets in data.get("transitions", {}).items()
     }
 
+    behavior_data = data.get("behavior", {})
+
     idle_behavior = None
-    idle_data = data.get("behavior", {}).get("idle")
+    idle_data = behavior_data.get("idle")
     if idle_data:
         try:
             idle_behavior = BehaviorConfig(
@@ -85,10 +87,43 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
                 raise
             raise ManifestError(f"Invalid [behavior.idle] section: {exc}") from exc
 
+    roam_behavior = None
+    roam_data = behavior_data.get("roam")
+    if roam_data:
+        try:
+            roam_behavior = RoamConfig(
+                min_delay_ms=int(roam_data.get("min_delay_ms", 5000)),
+                max_delay_ms=int(roam_data.get("max_delay_ms", 12000)),
+                min_walk_ms=int(roam_data.get("min_walk_ms", 800)),
+                max_walk_ms=int(roam_data.get("max_walk_ms", 2200)),
+                speed_px_s=float(roam_data.get("speed_px_s", 80.0)),
+                left_animation=str(roam_data.get("left_animation", "walk_left")),
+                right_animation=str(roam_data.get("right_animation", "walk_right")),
+            )
+            if roam_behavior.min_delay_ms < 0 or roam_behavior.max_delay_ms < roam_behavior.min_delay_ms:
+                raise ManifestError("[behavior.roam] has an invalid delay range")
+            if roam_behavior.min_walk_ms <= 0 or roam_behavior.max_walk_ms < roam_behavior.min_walk_ms:
+                raise ManifestError("[behavior.roam] has an invalid walk duration range")
+            if roam_behavior.speed_px_s <= 0:
+                raise ManifestError("[behavior.roam].speed_px_s must be greater than zero")
+            for animation_name in (
+                roam_behavior.left_animation,
+                roam_behavior.right_animation,
+            ):
+                if animation_name not in animations:
+                    raise ManifestError(
+                        f"Roam animation {animation_name!r} is not defined in [animations]"
+                    )
+        except (KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, ManifestError):
+                raise
+            raise ManifestError(f"Invalid [behavior.roam] section: {exc}") from exc
+
     return PetManifest(
         root=root,
         pet=pet,
         animations=animations,
         transitions=transitions,
         idle_behavior=idle_behavior,
+        roam_behavior=roam_behavior,
     )

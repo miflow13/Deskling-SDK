@@ -20,6 +20,20 @@ frames = [
   { file = "sprites/idle_01.svg", duration_ms = 120 },
 ]
 
+[animations.walk_left]
+mode = "pingpong"
+frames = [
+  { file = "sprites/walk_left_01.svg", duration_ms = 150 },
+  { file = "sprites/walk_left_02.svg", duration_ms = 150 },
+]
+
+[animations.walk_right]
+mode = "pingpong"
+frames = [
+  { file = "sprites/walk_right_01.svg", duration_ms = 150 },
+  { file = "sprites/walk_right_02.svg", duration_ms = 150 },
+]
+
 [transitions]
 idle = ["reaction", "walking", "dragging"]
 reaction = ["idle", "dragging"]
@@ -32,3 +46,12 @@ max_delay_ms = 3000
 actions = [
   { name = "blink", weight = 1.0 },
 ]
+
+[behavior.roam]
+min_delay_ms = 2500
+max_delay_ms = 5000
+min_walk_ms = 900
+max_walk_ms = 1800
+speed_px_s = 90
+left_animation = "walk_left"
+right_animation = "walk_right"

@@ -9,7 +9,14 @@ EXAMPLE = Path(__file__).parents[1] / "examples" / "slime"
 def test_example_manifest_loads() -> None:
     manifest = load_manifest(EXAMPLE)
     assert manifest.pet.name == "Slime"
-    assert set(manifest.animations) == {"idle", "blink"}
+    assert set(manifest.animations) == {
+        "idle",
+        "blink",
+        "walk_left",
+        "walk_right",
+    }
+    assert manifest.roam_behavior is not None
+    assert manifest.roam_behavior.speed_px_s == 90
 
 
 def test_pet_renders_default_frame_and_reaction_returns_idle() -> None:
