@@ -12,6 +12,7 @@ from .config import (
 )
 from .core import Event, EventBus, InvalidTransitionError, Pet, StateController
 from .movement import Bounds, Direction, MovementController, Position, Size
+from .package import PackageError, materialize_package, pack_pet
 from .platforms import NullBackend, PlatformBackend
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "ManifestError",
     "MovementController",
     "NullBackend",
+    "PackageError",
     "Pet",
     "PetManifest",
     "PlatformBackend",
@@ -37,5 +39,7 @@ __all__ = [
     "Size",
     "StateController",
     "load_manifest",
+    "materialize_package",
+    "pack_pet",
     "validate_manifest",
 ]
