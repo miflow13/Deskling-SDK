@@ -55,6 +55,41 @@ def move_window(window: Gtk.Window, x: int, y: int) -> bool:
         x11.XCloseDisplay(display)
 
 
+def get_pointer_position(window: Gtk.Window) -> tuple[int, int] | None:
+    """Return the pointer in X11 root/device coordinates."""
+    surface = window.get_surface()
+    if surface is None or GdkX11 is None or not isinstance(surface, GdkX11.X11Surface):
+        return None
+
+    x11, display = _open_x11()
+    if display is None:
+        return None
+    try:
+        root = ctypes.c_ulong()
+        child = ctypes.c_ulong()
+        root_x = ctypes.c_int()
+        root_y = ctypes.c_int()
+        window_x = ctypes.c_int()
+        window_y = ctypes.c_int()
+        mask = ctypes.c_uint()
+        queried = x11.XQueryPointer(
+            display,
+            surface.get_xid(),
+            ctypes.byref(root),
+            ctypes.byref(child),
+            ctypes.byref(root_x),
+            ctypes.byref(root_y),
+            ctypes.byref(window_x),
+            ctypes.byref(window_y),
+            ctypes.byref(mask),
+        )
+        if not queried:
+            return None
+        return root_x.value, root_y.value
+    finally:
+        x11.XCloseDisplay(display)
+
+
 def request_keep_above(window: Gtk.Window) -> bool:
     """Ask an EWMH-compatible X11 window manager to keep the pet above others."""
     surface = window.get_surface()
@@ -107,6 +142,18 @@ def _open_x11() -> tuple[ctypes.CDLL, int | None]:
     x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
     x11.XInternAtom.restype = ctypes.c_ulong
     x11.XMoveWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int]
+    x11.XQueryPointer.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    x11.XQueryPointer.restype = ctypes.c_int
     x11.XSendEvent.argtypes = [
         ctypes.c_void_p,
         ctypes.c_ulong,
