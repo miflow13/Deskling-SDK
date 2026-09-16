@@ -88,6 +88,11 @@ class GtkPetApplication(Gtk.Application):
     def _attach_input(self, widget: Gtk.Widget) -> None:
         click = Gtk.GestureClick()
         click.set_button(1)
+        # Learning note:
+        # GTK knows the click count as soon as a press arrives. Trigger the
+        # double-click reaction on the second press so another gesture cannot
+        # interrupt the matching release before Deskling sees it.
+        click.connect("pressed", self._on_click_pressed)
         click.connect("released", self._on_click_released)
         widget.add_controller(click)
 
@@ -110,11 +115,29 @@ class GtkPetApplication(Gtk.Application):
         pet.tick(delta_ms)
         return True
 
+    def _on_click_pressed(
+        self, _gesture: Gtk.GestureClick, n_press: int, x: float, y: float
+    ) -> None:
+        pet = self._pet
+        if pet is None:
+            return
+
+        # A double-click is known on the second press. React immediately rather
+        # than waiting for the release, which may be interrupted by another
+        # gesture controller participating in the same pointer sequence.
+        if n_press >= 2 and not self._drag_active:
+            pet.handle_click(n_press, x=x, y=y)
+
     def _on_click_released(
         self, _gesture: Gtk.GestureClick, n_press: int, x: float, y: float
     ) -> None:
         pet = self._pet
         if pet is None:
+            return
+
+        # Double-click was already handled on its second press. Handling it here
+        # too would restart the reaction and duplicate its events.
+        if n_press >= 2:
             return
 
         # GTK may report a release-click around the same pointer sequence used
@@ -123,7 +146,7 @@ class GtkPetApplication(Gtk.Application):
         if self._drag_active or time.monotonic() < self._suppress_click_until:
             return
 
-        pet.handle_click(n_press, x=x, y=y)
+        pet.handle_click(1, x=x, y=y)
 
     def _on_drag_begin(self, _gesture: Gtk.GestureDrag, x: float, y: float) -> None:
         pet = self._pet
