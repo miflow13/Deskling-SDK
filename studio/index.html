@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Build a Deskling desktop pet in your browser and export a portable .deskling package.">
+  <title>Deskling Studio</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Deskling Studio home">
+      <span class="brand-mark" aria-hidden="true">✦</span>
+      <span>Deskling Studio</span>
+    </a>
+    <div class="privacy-pill">Local-only · your files never leave this browser</div>
+  </header>
+
+  <main class="studio-shell">
+    <section class="intro">
+      <p class="eyebrow">DESKLING PET BUILDER · v0.1</p>
+      <h1>Turn your artwork into a desktop pet.</h1>
+      <p>Upload animation frames, preview the behavior, then export a real <code>.deskling</code> package that runs with the Deskling SDK.</p>
+    </section>
+
+    <section class="workspace" aria-label="Pet builder">
+      <aside class="panel controls-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">01 · PET</p>
+            <h2>Basics</h2>
+          </div>
+          <span class="status-dot" title="Local browser session"></span>
+        </div>
+
+        <div class="field-grid two-col">
+          <label class="field field-wide">
+            <span>Name</span>
+            <input id="pet-name" type="text" value="My Deskling" maxlength="60">
+          </label>
+          <label class="field">
+            <span>Canvas width</span>
+            <input id="pet-width" type="number" value="64" min="1" max="1024">
+          </label>
+          <label class="field">
+            <span>Canvas height</span>
+            <input id="pet-height" type="number" value="64" min="1" max="1024">
+          </label>
+          <label class="field field-wide">
+            <span>Desktop scale</span>
+            <select id="pet-scale">
+              <option value="1">1×</option>
+              <option value="2" selected>2×</option>
+              <option value="3">3×</option>
+              <option value="4">4×</option>
+            </select>
+          </label>
+        </div>
+
+        <hr>
+
+        <div class="panel-heading compact">
+          <div>
+            <p class="step-label">02 · ANIMATIONS</p>
+            <h2>Frames</h2>
+          </div>
+        </div>
+
+        <div id="animation-list" class="animation-list"></div>
+      </aside>
+
+      <section class="panel preview-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">03 · PREVIEW</p>
+            <h2>Your tiny desktop</h2>
+          </div>
+          <button id="reset-preview" class="text-button" type="button">Reset position</button>
+        </div>
+
+        <div id="desktop-preview" class="desktop-preview">
+          <div class="desktop-noise" aria-hidden="true"></div>
+          <div class="desktop-topbar">
+            <span>Activities</span>
+            <span>Deskling Preview</span>
+            <span>14:42</span>
+          </div>
+          <div class="desktop-icons" aria-hidden="true">
+            <div><span>⌂</span><small>Home</small></div>
+            <div><span>▣</span><small>Notes</small></div>
+          </div>
+          <div id="pet-stage" class="pet-stage" tabindex="0" aria-label="Pet preview. Click, double click, or drag the pet.">
+            <div id="pet-placeholder" class="pet-placeholder">
+              <span>✦</span>
+              <strong>Add idle frames</strong>
+              <small>Your pet will appear here</small>
+            </div>
+            <img id="pet-sprite" alt="Pet preview" draggable="false" hidden>
+          </div>
+          <div class="preview-hint">Click · double-click · drag</div>
+        </div>
+
+        <div class="preview-actions" aria-label="Preview animation controls">
+          <button type="button" data-preview-animation="idle">Play idle</button>
+          <button type="button" data-preview-animation="click">Click reaction</button>
+          <button type="button" data-preview-animation="double">Double-click reaction</button>
+        </div>
+
+        <div class="manifest-card">
+          <div class="manifest-heading">
+            <div>
+              <p class="step-label">GENERATED</p>
+              <h3>pet.toml</h3>
+            </div>
+            <span id="validation-state" class="validation-state">Waiting for idle frames</span>
+          </div>
+          <pre id="manifest-preview" aria-label="Generated pet.toml preview"></pre>
+        </div>
+      </section>
+
+      <aside class="panel export-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">04 · EXPORT</p>
+            <h2>Package</h2>
+          </div>
+        </div>
+
+        <div class="export-illustration" aria-hidden="true">
+          <div class="package-icon">✦</div>
+          <div>
+            <strong id="package-name-preview">my-deskling.deskling</strong>
+            <small>Portable, data-only pet package</small>
+          </div>
+        </div>
+
+        <div class="export-checks">
+          <div><span>✓</span><p><strong>Local build</strong><small>No uploads or accounts</small></p></div>
+          <div><span>✓</span><p><strong>SDK v0.1 format</strong><small>Root manifest + sprite assets</small></p></div>
+          <div><span>✓</span><p><strong>Data only</strong><small>No scripts or executable code</small></p></div>
+        </div>
+
+        <button id="export-button" class="primary-button" type="button" disabled>Export .deskling</button>
+        <p id="export-message" class="export-message" role="status"></p>
+
+        <details class="help-card">
+          <summary>How do I run it?</summary>
+          <p>With the Deskling SDK installed:</p>
+          <code>deskling run my-pet.deskling</code>
+        </details>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <span>Deskling Studio v0.1</span>
+    <span>Built on the Deskling Pet Format</span>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
