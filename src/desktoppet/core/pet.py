@@ -13,11 +13,31 @@ from .state import StateController
 
 
 class Pet:
-    """Composition root for the reusable pet engine."""
+    """Composition root for the reusable pet engine.
+
+    Learning note:
+        A composition root is the place where separate pieces are created and
+        wired together. `Pet` does not try to *be* the animation system, state
+        machine, movement system, drag system, etc. Instead, it HAS those
+        components and coordinates them.
+
+        PetManifest -> Pet -> engine components -> PlatformBackend
+
+    The manifest provides the pet's configuration/data. The backend provides
+    platform-specific capabilities such as drawing a frame and moving a window.
+    The core Pet class connects those two worlds without importing GTK.
+    """
 
     def __init__(self, manifest: PetManifest, backend: PlatformBackend) -> None:
+        # These are the two major inputs to the runtime:
+        # 1. manifest = what this pet is configured to do
+        # 2. backend = how this operating system displays/moves the pet
         self.manifest = manifest
         self.backend = backend
+
+        # Pet owns small focused components rather than putting every job into
+        # one giant class. This is composition: Pet HAS an EventBus,
+        # AnimationPlayer, StateController, MovementController, etc.
         self.events = EventBus()
         self.player = AnimationPlayer()
         self.states = StateController(manifest.pet.default_state, manifest.transitions)
@@ -48,6 +68,8 @@ class Pet:
                 max_walk_ms=config.max_walk_ms,
             )
 
+        # Once all components exist, place the window and start the configured
+        # default animation. This is the point where the blueprint becomes live.
         self.backend.set_position(self.movement.position)
         self.play(manifest.pet.default_animation)
 
