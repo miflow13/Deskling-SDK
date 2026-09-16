@@ -6,7 +6,7 @@ Deskling SDK is a small, composition-first, event-driven Python framework for bu
 
 ## MVP status
 
-The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, multiple declarative example pets, and a native GTK4/Libadwaita Studio editor.
+The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, multiple declarative example pets, and a native GTK4/Libadwaita Studio creator.
 
 The Linux runner includes a GTK4 adapter that creates a transparent pet window, displays animation frames, ticks the core runtime, emits click events, and connects pointer dragging to the SDK movement system. On GNOME Wayland it uses XWayland for freely movable pet windows; compositors with gtk4-layer-shell support can use native Wayland positioning.
 
@@ -74,33 +74,44 @@ Package loading checks archive paths and entry types before extraction, rejects 
 
 ## Deskling Studio
 
-Deskling Studio is now a native GTK4/Libadwaita desktop editor, so creating and editing pets does not require hosting a website or running a local web server.
+Deskling Studio is a native GTK4/Libadwaita pet creator, so building and editing pets does not require hosting a website, running a browser builder, or hand-writing `pet.toml`.
 
-Launch an empty Studio window:
+Launch Studio:
 
 ```bash
 deskling studio
 ```
 
-Or open a pet immediately:
+Or open an existing pet immediately:
 
 ```bash
 deskling studio examples/boo/pet.toml
 deskling studio examples/boo.deskling
 ```
 
-The first native milestone supports:
+Native Studio can now:
 
-- opening `pet.toml` projects and `.deskling` packages
-- editing pet name, canvas width/height, and desktop scale
-- browsing every animation in the manifest
-- previewing animation frames with their declared timing
-- exporting a new `.deskling` package through the same validated SDK packer
+- create a brand-new pet by choosing its first idle frame
+- open `pet.toml` projects and `.deskling` packages
+- edit pet name, canvas width/height, and desktop scale
+- add new named animations
+- import one or many image frames into an animation
+- reorder and remove frames visually
+- set each frame's duration in milliseconds
+- switch playback between `once`, `loop`, and `pingpong`
+- preview the selected animation using the edited timing
+- export a validated `.deskling` package through the same SDK packer used by the CLI
+
+Studio clones opened assets into an isolated temporary workspace before editing them. The source project or installed package cache is not rewritten when frames are rearranged or imported; changes become portable only when the user explicitly exports a new package.
 
 The editor sits above the declarative config boundary rather than duplicating engine logic:
 
 ```text
+Artwork / existing pet
+        |
+        v
 Native Deskling Studio
+  isolated workspace
         |
         v
 PetManifest + assets
