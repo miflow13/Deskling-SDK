@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,15 @@ from desktoppet.studio import (
 
 ROOT = Path(__file__).resolve().parents[1]
 BOO = ROOT / "examples" / "boo"
+STUDIO_APPLICATION = ROOT / "src" / "desktoppet" / "studio" / "application.py"
+
+
+def test_native_studio_ui_source_parses_without_importing_gtk() -> None:
+    source = STUDIO_APPLICATION.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "New Pet…" in source
+    assert "Add Animation…" in source
+    assert "Add Frames…" in source
 
 
 def test_manifest_writer_round_trips_boo(tmp_path: Path) -> None:
