@@ -4,7 +4,13 @@ import tomllib
 from desktoppet.animation import Animation, Frame, PlaybackMode
 from desktoppet.behavior import BehaviorAction
 
-from .manifest import BehaviorConfig, PetManifest, PetSettings, RoamConfig
+from .manifest import (
+    BehaviorConfig,
+    InteractionConfig,
+    PetManifest,
+    PetSettings,
+    RoamConfig,
+)
 
 
 class ManifestError(ValueError):
@@ -88,6 +94,38 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         for state, targets in data.get("transitions", {}).items()
     }
 
+    # Simple pointer reactions are declared as animation names. The platform
+    # layer only reports clicks; the core decides which configured reaction to
+    # play. This keeps GTK-specific input separate from pet personality.
+    interaction = None
+    interaction_data = data.get("interaction")
+    if interaction_data:
+        try:
+            click_value = interaction_data.get("click_animation")
+            double_click_value = interaction_data.get("double_click_animation")
+            interaction = InteractionConfig(
+                click_animation=str(click_value) if click_value is not None else None,
+                double_click_animation=(
+                    str(double_click_value) if double_click_value is not None else None
+                ),
+            )
+            for label, animation_name in (
+                ("click_animation", interaction.click_animation),
+                ("double_click_animation", interaction.double_click_animation),
+            ):
+                if animation_name is None:
+                    continue
+                if not animation_name.strip():
+                    raise ManifestError(f"[interaction].{label} cannot be empty")
+                if animation_name not in animations:
+                    raise ManifestError(
+                        f"Interaction animation {animation_name!r} is not defined in [animations]"
+                    )
+        except ManifestError:
+            raise
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ManifestError(f"Invalid [interaction] section: {exc}") from exc
+
     behavior_data = data.get("behavior", {})
 
     idle_behavior = None
@@ -150,4 +188,5 @@ def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest
         transitions=transitions,
         idle_behavior=idle_behavior,
         roam_behavior=roam_behavior,
+        interaction=interaction,
     )

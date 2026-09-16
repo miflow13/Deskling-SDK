@@ -32,6 +32,13 @@ frames = [
   { file = "sprites/idle_01.svg", duration_ms = 120 },
 ]
 
+[animations.love]
+mode = "once"
+frames = [
+  { file = "sprites/love.svg", duration_ms = 280 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
 [animations.walk_left]
 mode = "pingpong"
 frames = [
@@ -45,6 +52,12 @@ frames = [
   { file = "sprites/walk_right_01.svg", duration_ms = 150 },
   { file = "sprites/walk_right_02.svg", duration_ms = 150 },
 ]
+
+# Platform adapters report pointer input. This section gives those gestures
+# pet-specific meaning without putting personality rules inside GTK code.
+[interaction]
+click_animation = "blink"
+double_click_animation = "love"
 
 # State transitions are the legal routes through the pet's state machine.
 # Example: idle may become walking, but dragging can only return to idle here.

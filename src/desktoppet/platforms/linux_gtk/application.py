@@ -18,6 +18,7 @@ from .backend import GtkBackend
 
 class GtkPetApplication(Gtk.Application):
     TICK_MS = 16
+    DRAG_CLICK_SUPPRESSION_S = 0.15
 
     def __init__(self, project_path: str | Path) -> None:
         super().__init__(
@@ -34,6 +35,7 @@ class GtkPetApplication(Gtk.Application):
         self._drag_origin_y = 0.0
         self._drag_start_x = 0.0
         self._drag_start_y = 0.0
+        self._suppress_click_until = 0.0
 
     def do_activate(self) -> None:
         existing = self.get_active_window()
@@ -111,11 +113,17 @@ class GtkPetApplication(Gtk.Application):
     def _on_click_released(
         self, _gesture: Gtk.GestureClick, n_press: int, x: float, y: float
     ) -> None:
-        if self._pet is None:
+        pet = self._pet
+        if pet is None:
             return
-        self._pet.events.emit("pet.clicked", clicks=n_press, x=x, y=y)
-        if n_press == 2:
-            self._pet.events.emit("pet.double_clicked", x=x, y=y)
+
+        # GTK may report a release-click around the same pointer sequence used
+        # for a drag. Do not let dropping the pet accidentally trigger a click
+        # reaction. The short deadline also covers callback ordering after drag-end.
+        if self._drag_active or time.monotonic() < self._suppress_click_until:
+            return
+
+        pet.handle_click(n_press, x=x, y=y)
 
     def _on_drag_begin(self, _gesture: Gtk.GestureDrag, x: float, y: float) -> None:
         pet = self._pet
@@ -165,6 +173,7 @@ class GtkPetApplication(Gtk.Application):
             )
         pet.drag_end()
         self._drag_active = False
+        self._suppress_click_until = time.monotonic() + self.DRAG_CLICK_SUPPRESSION_S
 
     def _sample_global_drag(self) -> bool:
         pet = self._pet

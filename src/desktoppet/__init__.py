@@ -1,7 +1,7 @@
 """Public API for Deskling SDK."""
 
 from .animation import Animation, AnimationPlayer, Frame, PlaybackMode
-from .config import ManifestError, PetManifest, load_manifest
+from .config import InteractionConfig, ManifestError, PetManifest, load_manifest
 from .core import Event, EventBus, InvalidTransitionError, Pet, StateController
 from .movement import Bounds, Direction, MovementController, Position, Size
 from .platforms import NullBackend, PlatformBackend
@@ -14,6 +14,7 @@ __all__ = [
     "Event",
     "EventBus",
     "Frame",
+    "InteractionConfig",
     "InvalidTransitionError",
     "ManifestError",
     "MovementController",

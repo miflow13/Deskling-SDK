@@ -45,6 +45,14 @@ class RoamConfig:
     right_animation: str
 
 
+@dataclass(frozen=True, slots=True)
+class InteractionConfig:
+    """Animations the pet should play for simple pointer interactions."""
+
+    click_animation: str | None = None
+    double_click_animation: str | None = None
+
+
 @dataclass(slots=True)
 class PetManifest:
     """The complete validated blueprint handed from config loading to the engine.
@@ -63,3 +71,4 @@ class PetManifest:
     transitions: dict[str, set[str]]
     idle_behavior: BehaviorConfig | None = None
     roam_behavior: RoamConfig | None = None
+    interaction: InteractionConfig | None = None
