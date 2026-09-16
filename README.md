@@ -6,7 +6,7 @@ Deskling SDK is a small, composition-first, event-driven Python framework for bu
 
 ## MVP status
 
-The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, multiple declarative example pets, and an early browser-based visual builder.
+The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, multiple declarative example pets, and a native GTK4/Libadwaita Studio editor.
 
 The Linux runner includes a GTK4 adapter that creates a transparent pet window, displays animation frames, ticks the core runtime, emits click events, and connects pointer dragging to the SDK movement system. On GNOME Wayland it uses XWayland for freely movable pet windows; compositors with gtk4-layer-shell support can use native Wayland positioning.
 
@@ -18,7 +18,7 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-GTK is a Linux system dependency rather than a normal Python package. On Fedora, install GTK/PyGObject with your system package manager. If `import gi` works outside the venv but not inside it, recreate the environment with system packages visible:
+GTK is a Linux system dependency rather than a normal Python package. On Fedora, install GTK/PyGObject and Libadwaita with your system package manager. If `import gi` works outside the venv but not inside it, recreate the environment with system packages visible:
 
 ```bash
 deactivate 2>/dev/null || true
@@ -74,32 +74,45 @@ Package loading checks archive paths and entry types before extraction, rejects 
 
 ## Deskling Studio
 
-`studio/` contains Deskling Studio v0.1, a static visual pet builder that runs entirely in the browser. Artwork stays local to the browser; Studio does not require accounts, uploads, a backend, npm, or external runtime dependencies.
+Deskling Studio is now a native GTK4/Libadwaita desktop editor, so creating and editing pets does not require hosting a website or running a local web server.
 
-Run it locally from the repository root:
+Launch an empty Studio window:
 
 ```bash
-python -m http.server 8080
+deskling studio
 ```
 
-Then open `http://localhost:8080/studio/`.
+Or open a pet immediately:
 
-The first Studio workflow supports pet identity/canvas settings, idle frames, click and double-click reactions, animation timing/playback controls, a fake-desktop preview with dragging, live `pet.toml` generation, and direct `.deskling` export.
+```bash
+deskling studio examples/boo/pet.toml
+deskling studio examples/boo.deskling
+```
 
-This creates the same package shape consumed by the Python SDK:
+The first native milestone supports:
+
+- opening `pet.toml` projects and `.deskling` packages
+- editing pet name, canvas width/height, and desktop scale
+- browsing every animation in the manifest
+- previewing animation frames with their declared timing
+- exporting a new `.deskling` package through the same validated SDK packer
+
+The editor sits above the declarative config boundary rather than duplicating engine logic:
 
 ```text
-Deskling Studio
-      |
-      v
-pet.toml + sprites
-      |
-      v
+Native Deskling Studio
+        |
+        v
+PetManifest + assets
+        |
+        v
 .deskling package
-      |
-      v
+        |
+        v
 Deskling SDK runtime
 ```
+
+The existing static browser prototype remains under `studio/` as a future hosted-web foundation, but the native application is the primary Studio experience for now.
 
 ## Architecture
 

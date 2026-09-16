@@ -99,7 +99,23 @@ def _run(path: str, debug: bool) -> int:
         return 1
 
     application = GtkPetApplication(path)
-    return application.run([sys.argv[0]])
+    try:
+        return application.run([sys.argv[0]])
+    except KeyboardInterrupt:
+        return 130
+
+
+def _studio(path: str | None) -> int:
+    try:
+        from desktoppet.studio.application import run_studio
+    except (ImportError, ValueError) as exc:
+        print(f"GTK4, Libadwaita, and PyGObject are required for Deskling Studio: {exc}")
+        return 1
+
+    try:
+        return run_studio(path)
+    except KeyboardInterrupt:
+        return 130
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -124,11 +140,23 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Launch a pet in a transparent GTK desktop window")
     run.add_argument("path")
     run.add_argument("--debug", action="store_true")
+
+    studio = subparsers.add_parser("studio", help="Launch the native Deskling Studio editor")
+    studio.add_argument(
+        "path",
+        nargs="?",
+        help="Optional pet.toml or .deskling package to open immediately",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "studio":
+        path = str(Path(args.path)) if args.path else None
+        return _studio(path)
+
     path = str(Path(args.path))
     if args.command == "pack":
         return _pack(path, args.output)
