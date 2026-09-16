@@ -3,10 +3,24 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "desktop-pet-sdk"
+name = "deskling-sdk"
 version = "0.1.0"
-description = "A framework for building interactive desktop pets."
+description = "A small, composition-first SDK for building interactive desktop pets."
+readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name = "Mika Flowers" }]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+deskling = "desktoppet.cli:main"
+desktoppet = "desktoppet.cli:main"
+deskling-studio = "desktoppet.studio.application_with_builder:run_studio"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

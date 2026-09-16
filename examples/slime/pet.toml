@@ -1,0 +1,87 @@
+schema_version = 1
+
+# This file DESCRIBES the pet; it does not run the pet itself.
+# Deskling's loader reads this TOML and converts it into Python dataclasses:
+#
+#   pet.toml -> load_manifest() -> PetManifest -> runtime builder -> Pet
+#
+# That separation lets pet creators change personality/config without editing
+# the SDK engine, and it gives a future web builder a stable data contract.
+
+[pet]
+# Basic identity and canvas/default runtime settings.
+name = "Slime"
+width = 32
+height = 32
+scale = 2
+default_state = "idle"
+default_animation = "idle"
+
+# Each animation is data: frame files + timing + playback mode.
+# It does NOT decide why the animation plays; the engine/state/behavior layers do.
+[animations.idle]
+mode = "pingpong"
+frames = [
+  { file = "sprites/idle_01.svg", duration_ms = 350 },
+  { file = "sprites/idle_02.svg", duration_ms = 350 },
+]
+
+[animations.blink]
+mode = "once"
+frames = [
+  { file = "sprites/blink.svg", duration_ms = 120 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
+[animations.love]
+mode = "once"
+frames = [
+  { file = "sprites/love.svg", duration_ms = 280 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
+[animations.walk_left]
+mode = "pingpong"
+frames = [
+  { file = "sprites/walk_left_01.svg", duration_ms = 150 },
+  { file = "sprites/walk_left_02.svg", duration_ms = 150 },
+]
+
+[animations.walk_right]
+mode = "pingpong"
+frames = [
+  { file = "sprites/walk_right_01.svg", duration_ms = 150 },
+  { file = "sprites/walk_right_02.svg", duration_ms = 150 },
+]
+
+# Platform adapters report pointer input. This section gives those gestures
+# pet-specific meaning without putting personality rules inside GTK code.
+[interaction]
+click_animation = "blink"
+double_click_animation = "love"
+
+# State transitions are the legal routes through the pet's state machine.
+# Example: idle may become walking, but dragging can only return to idle here.
+[transitions]
+idle = ["reaction", "walking", "dragging"]
+reaction = ["idle", "dragging"]
+walking = ["idle", "dragging"]
+dragging = ["idle"]
+
+# Idle behavior tells the scheduler what occasional actions it may choose.
+[behavior.idle]
+min_delay_ms = 1500
+max_delay_ms = 3000
+actions = [
+  { name = "blink", weight = 1.0 },
+]
+
+# Roam behavior controls autonomous walking without changing SDK code.
+[behavior.roam]
+min_delay_ms = 2500
+max_delay_ms = 5000
+min_walk_ms = 900
+max_walk_ms = 1800
+speed_px_s = 90
+left_animation = "walk_left"
+right_animation = "walk_right"
