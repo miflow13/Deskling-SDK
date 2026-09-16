@@ -10,6 +10,13 @@ class PlaybackMode(StrEnum):
     PING_PONG = "pingpong"
 
 
+# Learning note:
+# An Animation is still just data. It groups Frames together and describes
+# how the sequence should behave when it reaches an end.
+#
+# Frame = one image + duration
+# Animation = named list of Frames + playback mode
+# AnimationPlayer = the thing that actually moves through those Frames
 @dataclass(slots=True)
 class Animation:
     """A named sequence of frames plus its playback mode."""
