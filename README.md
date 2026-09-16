@@ -89,9 +89,24 @@ deskling studio examples/boo/pet.toml
 deskling studio examples/boo.deskling
 ```
 
+### Mix-and-match Pet Builder
+
+People who do not already have artwork can start with the built-in Pet Builder. It combines interchangeable vector parts locally and generates a normal editable Deskling pet; there is no image-generation service or network requirement.
+
+The starter kit currently includes:
+
+- 3 bodies: blob, round, ghost
+- 3 eye styles: dot, sleepy, sparkle
+- 3 mouths: smile, cat, tiny
+- 5 accessories: sprout, bow, glasses, crown, none
+- 5 color palettes: mint, pink, lavender, peach, sky
+
+That produces 675 starter combinations before the user edits any generated frames. A created template pet automatically includes a breathing `idle` loop, a random `blink`, and a `bounce` click reaction. The generated SVG frames then appear in the normal Studio animation editor and can be reordered, retimed, replaced, or extended like imported artwork.
+
 Native Studio can now:
 
-- create a brand-new pet by choosing its first idle frame
+- build a pet without any existing artwork using mix-and-match templates
+- create a brand-new pet from imported artwork by choosing its first idle frame
 - open `pet.toml` projects and `.deskling` packages
 - edit pet name, canvas width/height, and desktop scale
 - add new named animations
@@ -107,20 +122,20 @@ Studio clones opened assets into an isolated temporary workspace before editing 
 The editor sits above the declarative config boundary rather than duplicating engine logic:
 
 ```text
-Artwork / existing pet
-        |
-        v
-Native Deskling Studio
-  isolated workspace
-        |
-        v
-PetManifest + assets
-        |
-        v
-.deskling package
-        |
-        v
-Deskling SDK runtime
+Template parts / artwork / existing pet
+              |
+              v
+      Native Deskling Studio
+        isolated workspace
+              |
+              v
+      PetManifest + assets
+              |
+              v
+       .deskling package
+              |
+              v
+      Deskling SDK runtime
 ```
 
 The existing static browser prototype remains under `studio/` as a future hosted-web foundation, but the native application is the primary Studio experience for now.
