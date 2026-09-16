@@ -1,4 +1,14 @@
+# Learning note:
+# This file DESCRIBES the pet; it does not run the pet itself.
+# Deskling's loader reads this TOML and converts it into Python dataclasses:
+#
+#   pet.toml -> load_manifest() -> PetManifest -> Pet
+#
+# That separation lets pet creators change personality/config without editing
+# the SDK engine.
+
 [pet]
+# Basic identity and canvas/default runtime settings.
 name = "Slime"
 width = 32
 height = 32
@@ -6,6 +16,8 @@ scale = 2
 default_state = "idle"
 default_animation = "idle"
 
+# Each animation is data: frame files + timing + playback mode.
+# It does NOT decide why the animation plays; the engine/state/behavior layers do.
 [animations.idle]
 mode = "pingpong"
 frames = [
@@ -34,12 +46,15 @@ frames = [
   { file = "sprites/walk_right_02.svg", duration_ms = 150 },
 ]
 
+# State transitions are the legal routes through the pet's state machine.
+# Example: idle may become walking, but dragging can only return to idle here.
 [transitions]
 idle = ["reaction", "walking", "dragging"]
 reaction = ["idle", "dragging"]
 walking = ["idle", "dragging"]
 dragging = ["idle"]
 
+# Idle behavior tells the scheduler what occasional actions it may choose.
 [behavior.idle]
 min_delay_ms = 1500
 max_delay_ms = 3000
@@ -47,6 +62,7 @@ actions = [
   { name = "blink", weight = 1.0 },
 ]
 
+# Roam behavior controls autonomous walking without changing SDK code.
 [behavior.roam]
 min_delay_ms = 2500
 max_delay_ms = 5000
