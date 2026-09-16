@@ -1,0 +1,94 @@
+from pathlib import Path
+import tomllib
+
+from desktoppet.animation import Animation, Frame, PlaybackMode
+from desktoppet.behavior import BehaviorAction
+
+from .manifest import BehaviorConfig, PetManifest, PetSettings
+
+
+class ManifestError(ValueError):
+    pass
+
+
+def load_manifest(path: str | Path, *, check_assets: bool = True) -> PetManifest:
+    manifest_path = Path(path)
+    if manifest_path.is_dir():
+        manifest_path = manifest_path / "pet.toml"
+    if not manifest_path.exists():
+        raise ManifestError(f"Manifest not found: {manifest_path}")
+
+    try:
+        data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ManifestError(f"Could not read manifest: {exc}") from exc
+
+    root = manifest_path.parent
+    pet_data = data.get("pet", {})
+    try:
+        pet = PetSettings(
+            name=str(pet_data["name"]),
+            width=int(pet_data["width"]),
+            height=int(pet_data["height"]),
+            scale=float(pet_data.get("scale", 1.0)),
+            default_state=str(pet_data.get("default_state", "idle")),
+            default_animation=str(pet_data.get("default_animation", "idle")),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ManifestError(f"Invalid [pet] section: {exc}") from exc
+
+    if pet.width <= 0 or pet.height <= 0 or pet.scale <= 0:
+        raise ManifestError("Pet width, height, and scale must be greater than zero")
+
+    animations: dict[str, Animation] = {}
+    for name, animation_data in data.get("animations", {}).items():
+        try:
+            mode = PlaybackMode(str(animation_data.get("mode", "loop")))
+            frames = []
+            for frame_data in animation_data["frames"]:
+                frame_path = root / str(frame_data["file"])
+                if check_assets and not frame_path.exists():
+                    raise ManifestError(f"Missing asset for {name!r}: {frame_path}")
+                frames.append(Frame(frame_path, int(frame_data["duration_ms"])))
+            animations[name] = Animation(name=name, frames=frames, mode=mode)
+        except ManifestError:
+            raise
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ManifestError(f"Invalid animation {name!r}: {exc}") from exc
+
+    if pet.default_animation not in animations:
+        raise ManifestError(
+            f"Default animation {pet.default_animation!r} is not defined in [animations]"
+        )
+
+    transitions = {
+        str(state): {str(target) for target in targets}
+        for state, targets in data.get("transitions", {}).items()
+    }
+
+    idle_behavior = None
+    idle_data = data.get("behavior", {}).get("idle")
+    if idle_data:
+        try:
+            idle_behavior = BehaviorConfig(
+                min_delay_ms=int(idle_data.get("min_delay_ms", 5000)),
+                max_delay_ms=int(idle_data.get("max_delay_ms", 15000)),
+                actions=[
+                    BehaviorAction(str(action["name"]), float(action.get("weight", 1.0)))
+                    for action in idle_data.get("actions", [])
+                ],
+            )
+            if not idle_behavior.actions:
+                raise ManifestError("[behavior.idle] must define at least one action")
+        except (KeyError, TypeError, ValueError) as exc:
+            if isinstance(exc, ManifestError):
+                raise
+            raise ManifestError(f"Invalid [behavior.idle] section: {exc}") from exc
+
+    return PetManifest(
+        root=root,
+        pet=pet,
+        animations=animations,
+        transitions=transitions,
+        idle_behavior=idle_behavior,
+    )

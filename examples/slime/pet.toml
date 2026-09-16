@@ -1,0 +1,34 @@
+[pet]
+name = "Slime"
+width = 32
+height = 32
+scale = 2
+default_state = "idle"
+default_animation = "idle"
+
+[animations.idle]
+mode = "pingpong"
+frames = [
+  { file = "sprites/idle_01.svg", duration_ms = 350 },
+  { file = "sprites/idle_02.svg", duration_ms = 350 },
+]
+
+[animations.blink]
+mode = "once"
+frames = [
+  { file = "sprites/blink.svg", duration_ms = 120 },
+  { file = "sprites/idle_01.svg", duration_ms = 120 },
+]
+
+[transitions]
+idle = ["reaction", "walking", "dragging"]
+reaction = ["idle", "dragging"]
+walking = ["idle", "dragging"]
+dragging = ["idle"]
+
+[behavior.idle]
+min_delay_ms = 1500
+max_delay_ms = 3000
+actions = [
+  { name = "blink", weight = 1.0 },
+]
