@@ -107,7 +107,7 @@ def _run(path: str, debug: bool) -> int:
 
 def _studio(path: str | None) -> int:
     try:
-        from desktoppet.studio.application import run_studio
+        from desktoppet.studio.application_with_builder import run_studio
     except (ImportError, ValueError) as exc:
         print(f"GTK4, Libadwaita, and PyGObject are required for Deskling Studio: {exc}")
         return 1
