@@ -13,7 +13,7 @@ from gi.repository import Gdk, Gio, Gtk  # noqa: E402
 
 from desktoppet.movement import Bounds, Position
 
-from .x11 import move_window, request_keep_above
+from .x11 import get_pointer_position, move_window, request_keep_above
 
 try:
     gi.require_version("GdkWayland", "4.0")
@@ -59,6 +59,16 @@ class GtkBackend:
     def show_frame(self, path: Path) -> None:
         self.picture.set_file(Gio.File.new_for_path(str(path)))
 
+    def pointer_position(self) -> Position | None:
+        """Return the global pointer in the same logical coordinates as the core."""
+        if self.layer_shell_enabled:
+            return None
+        raw = get_pointer_position(self.window)
+        if raw is None:
+            return None
+        scale = self._x11_coordinate_scale()
+        return Position(raw[0] / scale, raw[1] / scale)
+
     def set_position(self, position: Position) -> None:
         self._pending_position = position
         x, y = round(position.x), round(position.y)
@@ -68,7 +78,10 @@ class GtkBackend:
             Gtk4LayerShell.set_margin(self.window, Gtk4LayerShell.Edge.TOP, y)
             return
 
-        if self._mapped and not move_window(self.window, x, y):
+        scale = self._x11_coordinate_scale()
+        device_x = round(position.x * scale)
+        device_y = round(position.y * scale)
+        if self._mapped and not move_window(self.window, device_x, device_y):
             self._logger.debug("Window manager owns placement for this GTK surface")
 
     def _on_map(self, _window: Gtk.Window) -> None:
@@ -76,6 +89,32 @@ class GtkBackend:
         if not self.layer_shell_enabled:
             request_keep_above(self.window)
         self.set_position(self._pending_position)
+
+    def _x11_coordinate_scale(self) -> float:
+        if self.layer_shell_enabled:
+            return 1.0
+        surface = self.window.get_surface()
+        if surface is None:
+            return 1.0
+
+        get_scale = getattr(surface, "get_scale", None)
+        if callable(get_scale):
+            try:
+                scale = float(get_scale())
+            except (TypeError, ValueError):
+                scale = 1.0
+            if scale > 0:
+                return scale
+
+        get_scale_factor = getattr(surface, "get_scale_factor", None)
+        if callable(get_scale_factor):
+            try:
+                scale = float(get_scale_factor())
+            except (TypeError, ValueError):
+                scale = 1.0
+            if scale > 0:
+                return scale
+        return 1.0
 
     def _first_monitor(self) -> Gdk.Monitor | None:
         display = self.window.get_display()
