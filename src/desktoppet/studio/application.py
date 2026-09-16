@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import tempfile
 
 import gi
 
@@ -12,10 +13,23 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 from desktoppet.config import ManifestError, PetManifest, load_manifest
 from desktoppet.package import PackageError
 
-from .model import edit_pet_settings, export_manifest_package
+from .model import (
+    add_animation,
+    add_frames,
+    clone_manifest_to_workspace,
+    create_new_pet_manifest,
+    edit_pet_settings,
+    export_manifest_package,
+    move_frame,
+    remove_frame,
+    set_animation_mode,
+    set_frame_duration,
+)
 
 
 APP_ID = "io.github.deskling.Studio"
+PLAYBACK_MODES = ("once", "loop", "pingpong")
+ANIMATION_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _slugify(value: str) -> str:
@@ -31,14 +45,17 @@ class StudioWindow(Adw.ApplicationWindow):
     ) -> None:
         super().__init__(application=application)
         self.set_title("Deskling Studio")
-        self.set_default_size(1060, 720)
+        self.set_default_size(1180, 780)
 
         self._manifest: PetManifest | None = None
         self._source_path: Path | None = None
+        self._workspace_temp: tempfile.TemporaryDirectory[str] | None = None
         self._preview_source: int | None = None
         self._preview_animation: str | None = None
         self._preview_order: list[int] = []
         self._preview_cursor = 0
+        self._selected_animation: str | None = None
+        self._updating_controls = False
 
         self._toast_overlay = Adw.ToastOverlay()
         self.set_content(self._toast_overlay)
@@ -47,8 +64,12 @@ class StudioWindow(Adw.ApplicationWindow):
         self._toast_overlay.set_child(toolbar)
 
         header = Adw.HeaderBar()
-        title = Adw.WindowTitle(title="Deskling Studio", subtitle="Native pet editor")
+        title = Adw.WindowTitle(title="Deskling Studio", subtitle="Native pet creator")
         header.set_title_widget(title)
+
+        self._new_button = Gtk.Button(label="New Pet…")
+        self._new_button.connect("clicked", self._on_new_clicked)
+        header.pack_start(self._new_button)
 
         self._open_button = Gtk.Button(label="Open Pet…")
         self._open_button.connect("clicked", self._on_open_clicked)
@@ -62,7 +83,7 @@ class StudioWindow(Adw.ApplicationWindow):
         toolbar.add_top_bar(header)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_position(390)
+        paned.set_position(470)
         paned.set_wide_handle(True)
         toolbar.set_content(paned)
 
@@ -75,7 +96,7 @@ class StudioWindow(Adw.ApplicationWindow):
     def _build_editor(self) -> Gtk.Widget:
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_min_content_width(330)
+        scroller.set_min_content_width(410)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         box.set_margin_top(24)
@@ -86,8 +107,8 @@ class StudioWindow(Adw.ApplicationWindow):
 
         intro = Gtk.Label(
             label=(
-                "Open a pet.toml or .deskling package to inspect and edit it. "
-                "Changes stay local until you export a new package."
+                "Create a pet from artwork or open an existing pet.toml/.deskling. "
+                "Studio works in an isolated local workspace until you export."
             ),
             wrap=True,
             xalign=0,
@@ -132,15 +153,53 @@ class StudioWindow(Adw.ApplicationWindow):
         self._source_value.add_css_class("dim-label")
         box.append(self._source_value)
 
+        animation_heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.append(animation_heading)
+
         animations_label = Gtk.Label(label="Animations", xalign=0)
         animations_label.add_css_class("title-3")
-        box.append(animations_label)
+        animations_label.set_hexpand(True)
+        animation_heading.append(animations_label)
+
+        self._add_animation_button = Gtk.Button(label="Add Animation…")
+        self._add_animation_button.set_sensitive(False)
+        self._add_animation_button.connect("clicked", self._on_add_animation_clicked)
+        animation_heading.append(self._add_animation_button)
 
         self._animation_list = Gtk.ListBox()
         self._animation_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self._animation_list.add_css_class("boxed-list")
         self._animation_list.connect("row-selected", self._on_animation_selected)
         box.append(self._animation_list)
+
+        edit_heading = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.append(edit_heading)
+
+        self._selected_animation_label = Gtk.Label(label="Animation editor", xalign=0)
+        self._selected_animation_label.add_css_class("title-3")
+        self._selected_animation_label.set_hexpand(True)
+        edit_heading.append(self._selected_animation_label)
+
+        self._add_frames_button = Gtk.Button(label="Add Frames…")
+        self._add_frames_button.set_sensitive(False)
+        self._add_frames_button.connect("clicked", self._on_add_frames_clicked)
+        edit_heading.append(self._add_frames_button)
+
+        mode_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        box.append(mode_row)
+        mode_label = Gtk.Label(label="Playback", xalign=0)
+        mode_label.set_hexpand(True)
+        mode_row.append(mode_label)
+
+        self._mode_dropdown = Gtk.DropDown.new_from_strings(list(PLAYBACK_MODES))
+        self._mode_dropdown.set_sensitive(False)
+        self._mode_dropdown.connect("notify::selected", self._on_mode_changed)
+        mode_row.append(self._mode_dropdown)
+
+        self._frame_list = Gtk.ListBox()
+        self._frame_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._frame_list.add_css_class("boxed-list")
+        box.append(self._frame_list)
 
         return scroller
 
@@ -184,11 +243,11 @@ class StudioWindow(Adw.ApplicationWindow):
         self._picture = Gtk.Picture()
         self._picture.set_can_shrink(True)
         self._picture.set_content_fit(Gtk.ContentFit.CONTAIN)
-        self._picture.set_size_request(320, 320)
+        self._picture.set_size_request(360, 360)
         center.set_center_widget(self._picture)
 
         self._preview_hint = Gtk.Label(
-            label="Open a pet to preview its animation frames.",
+            label="Create or open a pet to preview its animation frames.",
             wrap=True,
             justify=Gtk.Justification.CENTER,
         )
@@ -204,37 +263,83 @@ class StudioWindow(Adw.ApplicationWindow):
     def _show_toast(self, message: str) -> None:
         self._toast_overlay.add_toast(Adw.Toast(title=message, timeout=4))
 
+    def _new_workspace(self) -> Path:
+        if self._workspace_temp is not None:
+            self._workspace_temp.cleanup()
+        self._workspace_temp = tempfile.TemporaryDirectory(prefix="deskling-studio-")
+        return Path(self._workspace_temp.name)
+
     def _set_editor_sensitive(self, sensitive: bool) -> None:
         self._name_entry.set_sensitive(sensitive)
         self._width_spin.set_sensitive(sensitive)
         self._height_spin.set_sensitive(sensitive)
         self._scale_spin.set_sensitive(sensitive)
         self._export_button.set_sensitive(sensitive)
+        self._add_animation_button.set_sensitive(sensitive)
 
-    def _clear_animation_rows(self) -> None:
-        child = self._animation_list.get_first_child()
+    @staticmethod
+    def _clear_listbox(listbox: Gtk.ListBox) -> None:
+        child = listbox.get_first_child()
         while child is not None:
             next_child = child.get_next_sibling()
-            self._animation_list.remove(child)
+            listbox.remove(child)
             child = next_child
 
-    def _load_path(self, path: Path) -> bool:
-        try:
-            manifest = load_manifest(path)
-        except (ManifestError, PackageError, OSError) as exc:
-            self._show_toast(f"Could not open pet: {exc}")
-            return False
+    def _stop_preview(self) -> None:
+        if self._preview_source is not None:
+            GLib.source_remove(self._preview_source)
+            self._preview_source = None
 
+    def _set_manifest(
+        self,
+        manifest: PetManifest,
+        *,
+        source_label: str,
+        select_animation: str | None = None,
+    ) -> None:
         self._manifest = manifest
-        self._source_path = path
         self._name_entry.set_text(manifest.pet.name)
         self._width_spin.set_value(manifest.pet.width)
         self._height_spin.set_value(manifest.pet.height)
         self._scale_spin.set_value(manifest.pet.scale)
-        self._source_value.set_text(str(path))
+        self._source_value.set_text(source_label)
         self._set_editor_sensitive(True)
+        self._refresh_animation_rows(select_animation or manifest.pet.default_animation)
+        self._update_summary()
 
-        self._clear_animation_rows()
+    def _load_path(self, path: Path) -> bool:
+        try:
+            source_manifest = load_manifest(path)
+            workspace = self._new_workspace()
+            manifest = clone_manifest_to_workspace(source_manifest, workspace)
+        except (ManifestError, PackageError, OSError, ValueError) as exc:
+            self._show_toast(f"Could not open pet: {exc}")
+            return False
+
+        self._source_path = path
+        self._set_manifest(manifest, source_label=str(path))
+        return False
+
+    def _update_summary(self) -> None:
+        manifest = self._manifest
+        if manifest is None:
+            self._manifest_summary.set_text("")
+            return
+        total_frames = sum(len(animation.frames) for animation in manifest.animations.values())
+        self._manifest_summary.set_text(
+            f"Pet Format v{manifest.schema_version} · "
+            f"{len(manifest.animations)} animation(s) · "
+            f"{total_frames} frame(s) · "
+            f"default: {manifest.pet.default_animation}"
+        )
+
+    def _refresh_animation_rows(self, select_name: str | None = None) -> None:
+        manifest = self._manifest
+        self._clear_listbox(self._animation_list)
+        if manifest is None:
+            return
+
+        selected_row: Gtk.ListBoxRow | None = None
         first_row: Gtk.ListBoxRow | None = None
         for name, animation in manifest.animations.items():
             row = Gtk.ListBoxRow()
@@ -261,17 +366,124 @@ class StudioWindow(Adw.ApplicationWindow):
             self._animation_list.append(row)
             if first_row is None:
                 first_row = row
+            if name == select_name:
+                selected_row = row
 
-        self._manifest_summary.set_text(
-            f"Pet Format v{manifest.schema_version} · "
-            f"{len(manifest.animations)} animation(s) · "
-            f"default: {manifest.pet.default_animation}"
+        if selected_row is None:
+            selected_row = first_row
+        if selected_row is not None:
+            self._animation_list.select_row(selected_row)
+
+    def _refresh_frame_rows(self, animation_name: str) -> None:
+        self._clear_listbox(self._frame_list)
+        manifest = self._manifest
+        if manifest is None:
+            return
+        animation = manifest.animations.get(animation_name)
+        if animation is None:
+            return
+
+        self._selected_animation = animation_name
+        self._selected_animation_label.set_text(f"Animation · {animation_name}")
+        self._add_frames_button.set_sensitive(True)
+        self._mode_dropdown.set_sensitive(True)
+
+        self._updating_controls = True
+        self._mode_dropdown.set_selected(PLAYBACK_MODES.index(animation.mode))
+        self._updating_controls = False
+
+        frame_count = len(animation.frames)
+        for index, frame in enumerate(animation.frames):
+            row = Gtk.ListBoxRow()
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row_box.set_margin_top(7)
+            row_box.set_margin_bottom(7)
+            row_box.set_margin_start(8)
+            row_box.set_margin_end(8)
+
+            thumbnail = Gtk.Picture.new_for_filename(str(manifest.root / frame.file))
+            thumbnail.set_content_fit(Gtk.ContentFit.CONTAIN)
+            thumbnail.set_size_request(42, 42)
+            row_box.append(thumbnail)
+
+            label = Gtk.Label(label=frame.file.name, xalign=0, ellipsize=3)
+            label.set_hexpand(True)
+            label.set_tooltip_text(frame.file.as_posix())
+            row_box.append(label)
+
+            duration = Gtk.SpinButton.new_with_range(16, 60000, 1)
+            duration.set_value(frame.duration_ms)
+            duration.set_tooltip_text("Frame duration in milliseconds")
+            duration.connect(
+                "value-changed",
+                self._on_frame_duration_changed,
+                animation_name,
+                index,
+            )
+            row_box.append(duration)
+
+            up = Gtk.Button(label="↑")
+            up.set_sensitive(index > 0)
+            up.set_tooltip_text("Move frame earlier")
+            up.connect("clicked", self._on_move_frame, animation_name, index, -1)
+            row_box.append(up)
+
+            down = Gtk.Button(label="↓")
+            down.set_sensitive(index < frame_count - 1)
+            down.set_tooltip_text("Move frame later")
+            down.connect("clicked", self._on_move_frame, animation_name, index, 1)
+            row_box.append(down)
+
+            remove = Gtk.Button(label="Remove")
+            remove.set_sensitive(frame_count > 1)
+            remove.add_css_class("destructive-action")
+            remove.connect("clicked", self._on_remove_frame, animation_name, index)
+            row_box.append(remove)
+
+            row.set_child(row_box)
+            self._frame_list.append(row)
+
+    def _on_new_clicked(self, _button: Gtk.Button) -> None:
+        chooser = Gtk.FileChooserNative.new(
+            "Choose the first idle frame",
+            self,
+            Gtk.FileChooserAction.OPEN,
+            "Create Pet",
+            "Cancel",
         )
-        self._preview_hint.set_text("Select an animation on the left to preview it.")
+        chooser.set_modal(True)
+        chooser.add_filter(self._image_filter())
+        chooser.connect("response", self._on_new_response)
+        chooser.show()
 
-        if first_row is not None:
-            self._animation_list.select_row(first_row)
-        return False
+    def _on_new_response(
+        self, chooser: Gtk.FileChooserNative, response: int
+    ) -> None:
+        try:
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            file = chooser.get_file()
+            if file is None:
+                return
+            path_value = file.get_path()
+            if path_value is None:
+                self._show_toast("Deskling Studio can only use local artwork")
+                return
+            try:
+                workspace = self._new_workspace()
+                manifest = create_new_pet_manifest(workspace, Path(path_value))
+            except (OSError, ValueError, ManifestError) as exc:
+                self._show_toast(f"Could not create pet: {exc}")
+                return
+            self._source_path = None
+            self._set_manifest(
+                manifest,
+                source_label="New unsaved pet · local Studio workspace",
+                select_animation="idle",
+            )
+            self._show_toast("New pet created — add frames or animations, then export")
+        finally:
+            chooser.destroy()
 
     def _on_open_clicked(self, _button: Gtk.Button) -> None:
         chooser = Gtk.FileChooserNative.new(
@@ -309,19 +521,254 @@ class StudioWindow(Adw.ApplicationWindow):
         finally:
             chooser.destroy()
 
+    @staticmethod
+    def _image_filter() -> Gtk.FileFilter:
+        image_filter = Gtk.FileFilter()
+        image_filter.set_name("Image frames")
+        image_filter.add_mime_type("image/*")
+        image_filter.add_pattern("*.png")
+        image_filter.add_pattern("*.svg")
+        image_filter.add_pattern("*.webp")
+        image_filter.add_pattern("*.gif")
+        return image_filter
+
+    @staticmethod
+    def _chooser_paths(chooser: Gtk.FileChooserNative) -> list[Path]:
+        files = chooser.get_files()
+        paths: list[Path] = []
+        for index in range(files.get_n_items()):
+            file = files.get_item(index)
+            if isinstance(file, Gio.File):
+                path = file.get_path()
+                if path is not None:
+                    paths.append(Path(path))
+        return paths
+
+    def _on_add_animation_clicked(self, _button: Gtk.Button) -> None:
+        if self._manifest is None:
+            return
+
+        dialog = Gtk.Dialog(title="Add Animation", transient_for=self, modal=True)
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Choose Frames…", Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+
+        content = dialog.get_content_area()
+        content.set_spacing(12)
+        content.set_margin_top(18)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+
+        name_entry = Gtk.Entry(placeholder_text="e.g. wave")
+        content.append(Gtk.Label(label="Animation name", xalign=0))
+        content.append(name_entry)
+
+        mode_dropdown = Gtk.DropDown.new_from_strings(list(PLAYBACK_MODES))
+        mode_dropdown.set_selected(0)
+        content.append(Gtk.Label(label="Playback mode", xalign=0))
+        content.append(mode_dropdown)
+
+        dialog.connect(
+            "response",
+            self._on_add_animation_dialog_response,
+            name_entry,
+            mode_dropdown,
+        )
+        dialog.present()
+
+    def _on_add_animation_dialog_response(
+        self,
+        dialog: Gtk.Dialog,
+        response: int,
+        name_entry: Gtk.Entry,
+        mode_dropdown: Gtk.DropDown,
+    ) -> None:
+        if response != Gtk.ResponseType.OK:
+            dialog.destroy()
+            return
+
+        name = name_entry.get_text().strip()
+        mode = PLAYBACK_MODES[mode_dropdown.get_selected()]
+        if not ANIMATION_NAME_RE.fullmatch(name):
+            self._show_toast(
+                "Animation name may only use letters, numbers, '_' and '-'"
+            )
+            dialog.destroy()
+            return
+        if self._manifest is not None and name in self._manifest.animations:
+            self._show_toast(f"Animation {name!r} already exists")
+            dialog.destroy()
+            return
+
+        dialog.destroy()
+        chooser = Gtk.FileChooserNative.new(
+            f"Choose frames for {name}",
+            self,
+            Gtk.FileChooserAction.OPEN,
+            "Add Animation",
+            "Cancel",
+        )
+        chooser.set_modal(True)
+        chooser.set_select_multiple(True)
+        chooser.add_filter(self._image_filter())
+        chooser.connect("response", self._on_add_animation_frames_response, name, mode)
+        chooser.show()
+
+    def _on_add_animation_frames_response(
+        self,
+        chooser: Gtk.FileChooserNative,
+        response: int,
+        animation_name: str,
+        mode: str,
+    ) -> None:
+        try:
+            if response != Gtk.ResponseType.ACCEPT or self._manifest is None:
+                return
+            paths = self._chooser_paths(chooser)
+            try:
+                self._manifest = add_animation(
+                    self._manifest,
+                    animation_name,
+                    paths,
+                    mode=mode,
+                )
+            except (ValueError, OSError, ManifestError) as exc:
+                self._show_toast(f"Could not add animation: {exc}")
+                return
+            self._refresh_animation_rows(animation_name)
+            self._update_summary()
+            self._show_toast(f"Added animation {animation_name}")
+        finally:
+            chooser.destroy()
+
+    def _on_add_frames_clicked(self, _button: Gtk.Button) -> None:
+        animation_name = self._selected_animation
+        if self._manifest is None or animation_name is None:
+            return
+        chooser = Gtk.FileChooserNative.new(
+            f"Add frames to {animation_name}",
+            self,
+            Gtk.FileChooserAction.OPEN,
+            "Add Frames",
+            "Cancel",
+        )
+        chooser.set_modal(True)
+        chooser.set_select_multiple(True)
+        chooser.add_filter(self._image_filter())
+        chooser.connect("response", self._on_add_frames_response, animation_name)
+        chooser.show()
+
+    def _on_add_frames_response(
+        self,
+        chooser: Gtk.FileChooserNative,
+        response: int,
+        animation_name: str,
+    ) -> None:
+        try:
+            if response != Gtk.ResponseType.ACCEPT or self._manifest is None:
+                return
+            paths = self._chooser_paths(chooser)
+            try:
+                self._manifest = add_frames(self._manifest, animation_name, paths)
+            except (ValueError, OSError, ManifestError) as exc:
+                self._show_toast(f"Could not add frames: {exc}")
+                return
+            self._refresh_animation_rows(animation_name)
+            self._update_summary()
+            self._show_toast(f"Added {len(paths)} frame(s)")
+        finally:
+            chooser.destroy()
+
     def _on_animation_selected(
         self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None
     ) -> None:
         if row is None:
+            self._selected_animation = None
+            self._add_frames_button.set_sensitive(False)
+            self._mode_dropdown.set_sensitive(False)
+            self._clear_listbox(self._frame_list)
             return
         name = getattr(row, "animation_name", None)
         if isinstance(name, str):
+            self._refresh_frame_rows(name)
             self._start_preview(name)
 
+    def _on_mode_changed(self, dropdown: Gtk.DropDown, _param: object) -> None:
+        if self._updating_controls or self._manifest is None:
+            return
+        animation_name = self._selected_animation
+        if animation_name is None:
+            return
+        mode = PLAYBACK_MODES[dropdown.get_selected()]
+        try:
+            self._manifest = set_animation_mode(self._manifest, animation_name, mode)
+        except (ValueError, ManifestError) as exc:
+            self._show_toast(f"Could not change playback mode: {exc}")
+            return
+        self._refresh_animation_rows(animation_name)
+        self._start_preview(animation_name)
+
+    def _on_frame_duration_changed(
+        self,
+        spin: Gtk.SpinButton,
+        animation_name: str,
+        index: int,
+    ) -> None:
+        if self._manifest is None:
+            return
+        try:
+            self._manifest = set_frame_duration(
+                self._manifest,
+                animation_name,
+                index,
+                spin.get_value_as_int(),
+            )
+        except (ValueError, IndexError, ManifestError) as exc:
+            self._show_toast(f"Could not change frame timing: {exc}")
+            return
+        self._start_preview(animation_name)
+
+    def _on_move_frame(
+        self,
+        _button: Gtk.Button,
+        animation_name: str,
+        index: int,
+        direction: int,
+    ) -> None:
+        if self._manifest is None:
+            return
+        try:
+            self._manifest = move_frame(
+                self._manifest,
+                animation_name,
+                index,
+                index + direction,
+            )
+        except (ValueError, IndexError, ManifestError) as exc:
+            self._show_toast(f"Could not move frame: {exc}")
+            return
+        self._refresh_animation_rows(animation_name)
+        self._update_summary()
+
+    def _on_remove_frame(
+        self,
+        _button: Gtk.Button,
+        animation_name: str,
+        index: int,
+    ) -> None:
+        if self._manifest is None:
+            return
+        try:
+            self._manifest = remove_frame(self._manifest, animation_name, index)
+        except (ValueError, IndexError, ManifestError) as exc:
+            self._show_toast(f"Could not remove frame: {exc}")
+            return
+        self._refresh_animation_rows(animation_name)
+        self._update_summary()
+
     def _start_preview(self, animation_name: str) -> None:
-        if self._preview_source is not None:
-            GLib.source_remove(self._preview_source)
-            self._preview_source = None
+        self._stop_preview()
 
         manifest = self._manifest
         if manifest is None:
@@ -352,7 +799,8 @@ class StudioWindow(Adw.ApplicationWindow):
         frame = animation.frames[index]
         self._picture.set_filename(str(manifest.root / frame.file))
         self._preview_hint.set_text(
-            f"{frame.file.as_posix()} · {frame.duration_ms} ms"
+            f"Frame {index + 1}/{len(animation.frames)} · "
+            f"{frame.file.name} · {frame.duration_ms} ms"
         )
 
         self._preview_cursor += 1
@@ -368,13 +816,15 @@ class StudioWindow(Adw.ApplicationWindow):
         manifest = self._manifest
         if manifest is None:
             raise ManifestError("No pet is open")
-        return edit_pet_settings(
+        edited = edit_pet_settings(
             manifest,
             name=self._name_entry.get_text().strip(),
             width=self._width_spin.get_value_as_int(),
             height=self._height_spin.get_value_as_int(),
             scale=self._scale_spin.get_value(),
         )
+        self._manifest = edited
+        return edited
 
     def _on_export_clicked(self, _button: Gtk.Button) -> None:
         if self._manifest is None:
@@ -431,9 +881,10 @@ class StudioWindow(Adw.ApplicationWindow):
             chooser.destroy()
 
     def do_close_request(self) -> bool:
-        if self._preview_source is not None:
-            GLib.source_remove(self._preview_source)
-            self._preview_source = None
+        self._stop_preview()
+        if self._workspace_temp is not None:
+            self._workspace_temp.cleanup()
+            self._workspace_temp = None
         return False
 
 
