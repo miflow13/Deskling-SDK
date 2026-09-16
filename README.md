@@ -2,13 +2,13 @@
 
 > The engine provides capabilities. The pet provides personality.
 
-Deskling SDK is a small, composition-first, event-driven Python framework for building interactive desktop companions. The `desktoppet` package contains the reusable engine; individual pets provide assets, configuration, and personality.
+Deskling SDK is a small, composition-first, event-driven Python framework for building interactive desktop companions. The `desktoppet` package contains the reusable engine; individual pets provide data-only assets, configuration, and personality.
 
 ## MVP status
 
-The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, a platform adapter boundary, developer CLI tools, and a Slime example.
+The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, and multiple declarative example pets.
 
-The Linux runner now includes a GTK4 adapter that creates a transparent pet window, displays animation frames, ticks the core runtime, emits click events, and connects pointer dragging to the SDK movement system. On GNOME Wayland it uses XWayland for freely movable pet windows; compositors with gtk4-layer-shell support can use native Wayland positioning.
+The Linux runner includes a GTK4 adapter that creates a transparent pet window, displays animation frames, ticks the core runtime, emits click events, and connects pointer dragging to the SDK movement system. On GNOME Wayland it uses XWayland for freely movable pet windows; compositors with gtk4-layer-shell support can use native Wayland positioning.
 
 ## Install for development
 
@@ -28,43 +28,80 @@ source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-## Try the example
+## Try the examples
 
 Headless developer tools:
 
 ```bash
 deskling validate examples/slime
-deskling inspect examples/slime
-deskling simulate examples/slime --ticks 12 --step-ms 250
+deskling inspect examples/boo
+deskling simulate examples/boo --ticks 12 --step-ms 250
 ```
 
-Launch the visible GTK pet:
+Launch a visible GTK pet:
 
 ```bash
 deskling run examples/slime
+deskling run examples/boo
 ```
 
-Drag the Slime with the primary mouse button. Click and double-click events are emitted by the engine for pet-specific behavior code to subscribe to.
+## Portable pet packages
+
+A `.deskling` file is Deskling's portable, data-only pet package. It contains a root `pet.toml` plus the assets referenced by that manifest. Arbitrary Python, shell scripts, and executable plugins are not part of the pet format.
+
+Build Boo into a package:
+
+```bash
+deskling pack examples/boo
+```
+
+That creates:
+
+```text
+examples/boo.deskling
+```
+
+The same developer commands work directly with the package:
+
+```bash
+deskling validate examples/boo.deskling
+deskling inspect examples/boo.deskling
+deskling simulate examples/boo.deskling
+deskling run examples/boo.deskling --debug
+```
+
+Package loading checks archive paths and entry types before extraction, rejects entries that escape the package root, and materializes valid packages into a content-addressed cache.
 
 ## Architecture
 
 ```text
-Pet project
-  assets + pet.toml + optional behavior code
-                 |
-                 v
+Pet folder / .deskling package
+  pet.toml + sprites + sounds
+              |
+              v
+Package + config layer
+  safe materialization + validation
+              |
+              v
+PetManifest (declarative data)
+              |
+              v
+Runtime builder
+  config -> engine objects
+              |
+              v
 Core SDK
   Pet + EventBus + StateController
   AnimationPlayer + MovementController
   DragController + BehaviorScheduler
-                 |
-                 v
+              |
+              v
 PlatformBackend protocol
-                 |
-        +--------+---------+
-        |                  |
-   NullBackend         GtkBackend
-   tests/tools        visible Linux pet
+              |
+        +-----+------+
+        |            |
+   NullBackend   GtkBackend
+   tests/tools  visible Linux pet
 ```
 
-The core package never imports GTK and never imports Mochi.
+The core package never imports GTK and never imports Mochi. New pets such as Boo can be added without changing SDK source code.

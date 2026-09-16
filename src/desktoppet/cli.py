@@ -6,8 +6,19 @@ from pathlib import Path
 
 from desktoppet.config import ManifestError, load_manifest
 from desktoppet.core import Pet
+from desktoppet.package import PackageError, pack_pet
 from desktoppet.platforms import NullBackend
 from desktoppet.platforms.linux import configure_display_backend
+
+
+def _pack(path: str, output: str | None) -> int:
+    try:
+        package_path = pack_pet(path, output)
+    except (ManifestError, PackageError) as exc:
+        print(f"Could not pack pet: {exc}")
+        return 1
+    print(f"Packed pet: {package_path}")
+    return 0
 
 
 def _validate(path: str) -> int:
@@ -66,10 +77,6 @@ def _run(path: str, debug: bool) -> int:
         print(f"Invalid pet: {exc}")
         return 1
 
-    # `force=True` matters for --debug. If GTK/PyGObject or another imported
-    # library configured the root logger first, basicConfig() would otherwise
-    # silently leave that existing setup in place and our DEBUG messages could
-    # remain hidden.
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
@@ -99,7 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="deskling", description="Deskling SDK developer tools")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    validate = subparsers.add_parser("validate", help="Validate a pet.toml and its assets")
+    pack = subparsers.add_parser("pack", help="Build a portable .deskling package")
+    pack.add_argument("path", help="Pet project folder or pet.toml")
+    pack.add_argument("-o", "--output", help="Output .deskling path")
+
+    validate = subparsers.add_parser("validate", help="Validate a pet project or .deskling package")
     validate.add_argument("path")
 
     inspect = subparsers.add_parser("inspect", help="Show a pet project's resolved configuration")
@@ -119,6 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     path = str(Path(args.path))
+    if args.command == "pack":
+        return _pack(path, args.output)
     if args.command == "validate":
         return _validate(path)
     if args.command == "inspect":
