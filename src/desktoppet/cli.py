@@ -1,9 +1,13 @@
 import argparse
+import logging
+import os
+import sys
 from pathlib import Path
 
 from desktoppet.config import ManifestError, load_manifest
 from desktoppet.core import Pet
 from desktoppet.platforms import NullBackend
+from desktoppet.platforms.linux import configure_display_backend
 
 
 def _validate(path: str) -> int:
@@ -53,6 +57,35 @@ def _simulate(path: str, ticks: int, step_ms: int) -> int:
     return 0
 
 
+def _run(path: str, debug: bool) -> int:
+    try:
+        load_manifest(path)
+    except ManifestError as exc:
+        print(f"Invalid pet: {exc}")
+        return 1
+
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    forced_xwayland = configure_display_backend(os.environ)
+    if forced_xwayland:
+        logging.getLogger(__name__).info(
+            "GNOME Wayland detected; using XWayland for movable pet windows"
+        )
+
+    try:
+        from desktoppet.platforms.linux_gtk import GtkPetApplication
+    except (ImportError, ValueError) as exc:
+        logging.getLogger(__name__).error(
+            "GTK4/PyGObject is required for 'deskling run': %s", exc
+        )
+        return 1
+
+    application = GtkPetApplication(path)
+    return application.run([sys.argv[0]])
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="deskling", description="Deskling SDK developer tools")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -67,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("path")
     simulate.add_argument("--ticks", type=int, default=10)
     simulate.add_argument("--step-ms", type=int, default=250)
+
+    run = subparsers.add_parser("run", help="Launch a pet in a transparent GTK desktop window")
+    run.add_argument("path")
+    run.add_argument("--debug", action="store_true")
     return parser
 
 
@@ -79,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
         return _inspect(path)
     if args.command == "simulate":
         return _simulate(path, args.ticks, args.step_ms)
+    if args.command == "run":
+        return _run(path, args.debug)
     return 2
 
 
