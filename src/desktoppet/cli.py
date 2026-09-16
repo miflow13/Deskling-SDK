@@ -64,10 +64,17 @@ def _run(path: str, debug: bool) -> int:
         print(f"Invalid pet: {exc}")
         return 1
 
+    # `force=True` matters for --debug. If GTK/PyGObject or another imported
+    # library configured the root logger first, basicConfig() would otherwise
+    # silently leave that existing setup in place and our DEBUG messages could
+    # remain hidden.
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
+        force=True,
     )
+    logging.getLogger(__name__).debug("Deskling debug logging enabled")
+
     forced_xwayland = configure_display_backend(os.environ)
     if forced_xwayland:
         logging.getLogger(__name__).info(
