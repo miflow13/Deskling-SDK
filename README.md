@@ -6,7 +6,7 @@ Deskling SDK is a small, composition-first, event-driven Python framework for bu
 
 ## MVP status
 
-The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, and multiple declarative example pets.
+The v0.1 core includes animation playback, events, guarded states, movement, dragging, idle scheduling, TOML manifests, portable `.deskling` packages, a platform adapter boundary, developer CLI tools, multiple declarative example pets, and an early browser-based visual builder.
 
 The Linux runner includes a GTK4 adapter that creates a transparent pet window, displays animation frames, ticks the core runtime, emits click events, and connects pointer dragging to the SDK movement system. On GNOME Wayland it uses XWayland for freely movable pet windows; compositors with gtk4-layer-shell support can use native Wayland positioning.
 
@@ -71,6 +71,35 @@ deskling run examples/boo.deskling --debug
 ```
 
 Package loading checks archive paths and entry types before extraction, rejects entries that escape the package root, and materializes valid packages into a content-addressed cache.
+
+## Deskling Studio
+
+`studio/` contains Deskling Studio v0.1, a static visual pet builder that runs entirely in the browser. Artwork stays local to the browser; Studio does not require accounts, uploads, a backend, npm, or external runtime dependencies.
+
+Run it locally from the repository root:
+
+```bash
+python -m http.server 8080
+```
+
+Then open `http://localhost:8080/studio/`.
+
+The first Studio workflow supports pet identity/canvas settings, idle frames, click and double-click reactions, animation timing/playback controls, a fake-desktop preview with dragging, live `pet.toml` generation, and direct `.deskling` export.
+
+This creates the same package shape consumed by the Python SDK:
+
+```text
+Deskling Studio
+      |
+      v
+pet.toml + sprites
+      |
+      v
+.deskling package
+      |
+      v
+Deskling SDK runtime
+```
 
 ## Architecture
 
